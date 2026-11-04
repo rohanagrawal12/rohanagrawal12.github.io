@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Opportunity Finder</title>
+<style>
+:root{--bg:#f7f6f2;--card:#fff;--ink:#1c1f1d;--mut:#62675f;--line:#dedcd4;--acc:#2f5d50;--on:#fff;--bar:#e6e4dc;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#141614;--card:#1d201e;--ink:#ecece6;--mut:#a3a79e;--line:#33372f;--acc:#7fb5a3;--on:#10201a;--bar:#2b2f2a}}
+:root[data-theme="dark"]{--bg:#141614;--card:#1d201e;--ink:#ecece6;--mut:#a3a79e;--line:#33372f;--acc:#7fb5a3;--on:#10201a;--bar:#2b2f2a}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,select,input,textarea{font:inherit;color:inherit}
+.hd{background:var(--ink);color:var(--bg);display:flex;align-items:center;gap:16px;padding:12px 20px;flex-wrap:wrap}
+.brand{font-weight:700;font-size:20px;margin-right:8px}
+nav{display:flex;gap:4px;flex:1}nav button{background:none;border:0;border-bottom:3px solid transparent;color:inherit;opacity:.75;padding:8px 10px;cursor:pointer;font-weight:600}
+nav button.on{opacity:1;border-color:var(--bg)}
+.hd input{border:1px solid var(--line);border-radius:6px;padding:8px 10px;background:var(--card);color:var(--ink);min-width:220px}
+.gear{background:none;border:1px solid var(--line);border-radius:6px;padding:6px;color:inherit;cursor:pointer;display:flex}
+main{max-width:860px;margin:0 auto;padding:20px 16px 110px}
+h1{font-size:26px;margin:0 0 6px}.mut{color:var(--mut)}
+.btn{border:1px solid var(--ink);background:var(--card);border-radius:6px;padding:10px 16px;font-weight:600;cursor:pointer}
+.btn.pri{background:var(--acc);border-color:var(--acc);color:var(--on)}
+.bar{display:flex;gap:10px;margin:16px 0}.bar details{flex:1;position:relative}
+summary{list-style:none;border:1px solid var(--line);background:var(--card);border-radius:6px;padding:11px 14px;cursor:pointer}
+.panel{position:absolute;z-index:5;left:0;right:0;top:46px;background:var(--card);border:1px solid var(--line);border-radius:6px;padding:14px;display:grid;gap:10px}
+.retake{font-size:17px;padding:11px 22px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.chip{border:1px solid var(--line);background:var(--card);border-radius:99px;padding:3px 11px;font-size:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:12px}
+.card h3{margin:0;font-size:19px}.meta{color:var(--mut);font-size:14px;margin:2px 0 8px}
+.fit,.why{margin:6px 0;font-size:15px}.why{color:var(--mut)}
+.facts{display:flex;flex-wrap:wrap;gap:4px 18px;font-size:14px;color:var(--mut);margin:8px 0}.facts b{color:var(--ink)}
+.bot{display:flex;align-items:center;justify-content:space-between;gap:28px;margin-top:12px;padding-top:12px;border-top:1px solid var(--line)}
+.match{display:flex;align-items:center;gap:10px;flex:1;font-size:14px}.meter{flex:1;max-width:200px;height:8px;background:var(--bar);border-radius:4px;overflow:hidden}.meter i{display:block;height:100%;background:var(--acc)}
+.tag{font-size:12px;font-weight:700;color:var(--acc);text-transform:uppercase;letter-spacing:.04em}
+.more{margin-top:12px;font-size:14px;display:grid;gap:6px}.more a{color:var(--acc)}
+.quiz .q{margin:18px 0}.ql{display:block;font-weight:600;margin-bottom:6px}
+textarea,select{width:100%;padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--card)}
+.opt{display:block;padding:5px 0}.opt input{margin-right:8px}
+.prog{height:6px;background:var(--bar);border-radius:3px;overflow:hidden}.prog i{display:block;height:100%;background:var(--acc)}
+.err{color:#b3261e;min-height:22px}.row{display:flex;gap:10px;justify-content:flex-end}
+.sec{margin:22px 0 8px;font-size:18px}.empty{padding:20px;border:1px dashed var(--line);border-radius:8px;color:var(--mut)}
+dialog{border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);max-width:380px}
+@media(max-width:700px){.hd{padding:10px 14px}.hd input{min-width:0;flex:1}
+ nav{position:fixed;left:0;right:0;bottom:0;background:var(--card);border-top:1px solid var(--line);padding:6px 4px calc(6px + env(safe-area-inset-bottom,0px));z-index:9;justify-content:space-around;color:var(--ink)}
+ nav button{border:0;font-size:12px;padding:8px 4px;flex:1}nav button.on{color:var(--acc);opacity:1}
+ .bot{gap:16px}.retake{padding:11px 14px}}
+</style></head>
+<body>
+<header class="hd"><span class="brand" id="brand"></span><nav id="nav"></nav>
+<input id="q" type="search" placeholder="Search clubs and interests" aria-label="Search">
+<button class="gear" data-act="settings" aria-label="Settings"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></svg></button></header>
+<main id="main"></main>
+<dialog id="dlg"><h2 style="margin-top:0">Settings</h2><p class="mut">Your answers and activities are saved on this device only.</p>
+<p><button class="btn" data-act="retake">Retake the quiz</button></p><p><button class="btn" data-act="clear">Clear my saved data</button></p><p><button class="btn" data-act="close">Close</button></p></dialog>
+<script>
+const APP="Opportunity Finder",LS="ofinder.v1",DATA=__DATA__;
+const ALL=[...DATA.school,...DATA.community,...DATA.explore];
+const TABS=["School","Community","Explore","My Activities"];
+const GRADES=["9th grade","10th grade","11th grade","12th grade","College freshman","College sophomore","College junior","College senior","Graduate student"];
+const WANT=["Join a club","Join a sports team","Volunteer or do service projects","Internships or jobs","Research","Write, report, or make media","Compete (debate, robotics, case competitions)","Lead or organize events","Perform or create (music, theater, art)","Find a mentor","Classes, workshops, or summer programs","Other"];
+const WHY=["Trying new things","Meeting people like me","Exploring careers or majors","College or grad school applications","Building skills","Service hours","Earning money","Just for fun","Other"];
+const TIME={"1-2 hours":120,"3-5 hours":300,"6-10 hours":600,"10+ hours":99999};
+const SLOTS=["Before school (before 8 AM)","Lunch","Right after school (3-4 PM)","Late afternoon (4-6 PM)","Evenings (after 6 PM)","Weekends","Summers or breaks"];
+const PAGES=[
+{title:"About you",q:[{id:"grade",t:"What grade/year are you in?",k:"select",o:GRADES},{id:"school",t:"What school do you go to?",k:"select",o:["The Village School","Another school (not listed yet)"]}]},
+{title:"What you like",intro:"Write like you’re talking to a friend. A sentence or two is plenty.",q:[
+{id:"learn",t:"What do you enjoy learning about, in school or outside it?",k:"text",ph:"I like biology because I love figuring out how things work."},
+{id:"free",t:"What do you do in your free time that you never get bored of?",k:"text",ph:"Sports, games, shows, music, drawing, cooking…"},
+{id:"make",t:"Do you like making, building, organizing, writing, or helping people? Tell us what and why.",k:"text",ph:"I like organizing events because I like bringing people together."},
+{id:"self",t:"Describe yourself and your interests in 2-3 sentences.",k:"text"}]},
+{title:"What you’re looking for",q:[
+{id:"want",t:"What do you want to do most? (pick up to 3)",k:"check",o:WANT,max:3},
+{id:"why",t:"What’s your main reason for looking? (pick up to 2)",k:"check",o:WHY,max:2},
+{id:"time",t:"How much time can you give per week?",k:"radio",o:Object.keys(TIME)},
+{id:"free2",t:"When are you usually free?",k:"check",o:SLOTS},
+{id:"fmt",t:"What format works the best for you?",k:"radio",o:["In person only","Online only","Either is fine"]},
+{id:"ride",t:"Do you have a way to get to places outside of school?",k:"radio",o:["Yes, I can drive or have reliable rides","Sometimes","No, I need things close to school or home"]},
+{id:"paid",t:"Would you consider paid opportunities, or only unpaid?",k:"radio",o:["Paid only","Unpaid is fine","Either is fine"]},
+{id:"avoid",t:"Anything you definitely don’t want to do? (optional)",k:"text",opt:1,ph:"Public speaking, anything competitive…"}]}];
+/* ---------- matching ---------- */
+const STOP=new Set("a an the and or but if of to in on at for with from by is am are was be i me my we you your it its that this as so do does dont like love really very just also about into out up not can could would want have has had get lot lots stuff thing things something anything enjoy enjoying im ive more most learn learning make makes making work works working people person play playing watch watching time good great curious creative new try trying kind".split(" "));
+const SYN={bio:"biology science",doctor:"medicine healthcare",doctors:"medicine healthcare",medical:"medicine healthcare",nurse:"healthcare medicine",coding:"coding computer programming",code:"coding computer programming",programming:"coding computer",computers:"computer coding",app:"app development coding",apps:"app development coding",drawing:"art design",paint:"art",painting:"art",sing:"singing music karaoke",singing:"music karaoke",acting:"theater acting",movies:"video media",film:"video media",youtube:"video media podcast",write:"writing journalism",writing:"writing journalism books",story:"storytelling writing",stories:"storytelling writing",reading:"books reading",gaming:"video games esports",games:"games video",soccer:"sports fitness",basketball:"sports fitness",football:"sports fitness",gym:"fitness sports",workout:"fitness sports",animals:"animals shelter",dogs:"animals shelter",cats:"animals shelter",pets:"animals shelter",nature:"environment",climate:"environment sustainability",money:"business finance",stocks:"stocks investing finance",business:"business entrepreneurship finance",startup:"entrepreneurship business",law:"law legal debate",lawyer:"law legal debate",speaking:"public speaking debate",speech:"public speaking debate",politics:"civics international relations law",government:"civics law",volunteer:"volunteering service",helping:"service volunteering community",teaching:"tutoring teaching mentoring",tutor:"tutoring teaching",robots:"robotics engineering",building:"engineering building",build:"engineering building",space:"space aerospace",cooking:"cooking culinary food",baking:"cooking food",food:"cooking food",brain:"neuroscience psychology",math:"math competition"};
+const SUF=["ive","ion","ing","ed","es","ly","s"];
+function stem(w){for(let p=0;p<2;p++){for(const s of SUF)if(w.length-s.length>=4&&w.endsWith(s)){w=w.slice(0,-s.length);break}}return w.length>4&&w.endsWith("e")?w.slice(0,-1):w}
+function terms(t){const m=new Map();for(const w of String(t||"").toLowerCase().replace(/[^a-z\s]/g," ").split(/\s+/)){if(w.length<3||STOP.has(w))continue;const s=stem(w);if(!m.has(s))m.set(s,[1,w]);else m.get(s)[0]=Math.min(1.5,m.get(s)[0]+.25);
+ if(SYN[w])for(const x of SYN[w].split(" ")){const sx=stem(x);if(!m.has(sx))m.set(sx,[.6,w])}}return m}
+function addIdx(m,t,w){for(const s of terms(t).keys())m.set(s,Math.max(m.get(s)||0,w))}
+const DF=new Map();
+for(const o of ALL){o.idx=new Map();addIdx(o.idx,o.tags.join(" "),3);addIdx(o.idx,o.name,2);addIdx(o.idx,o.category,2);addIdx(o.idx,o.good_fit_if_you_are.join(" "),1.5);addIdx(o.idx,o.description,1);for(const s of o.idx.keys())DF.set(s,(DF.get(s)||0)+1)}
+const idf=s=>Math.log(1+ALL.length/(DF.get(s)||1));
+function oppMins(o){const t=o.time_commitment||"";if(/full time/i.test(t))return 2400;const m=t.match(/([\d.]+)(?:-([\d.]+))?\s*(min|hr)/i);if(!m)return null;const n=+(m[2]||m[1]);return /min/i.test(m[3])?n:n*60}
+function reasonBonus(why,o){let b=0;const a=o.activity_types;for(const w of why){
+ if(w==="Meeting people like me"&&o.type==="Club")b+=1;
+ if(w==="Exploring careers or majors"&&(a.includes("Internships or jobs")||a.includes("Research")||a.includes("Find a mentor")))b+=2;
+ if(w==="College or grad school applications"&&(a.includes("Research")||a.includes("Internships or jobs")||a.some(x=>x.startsWith("Compete"))))b+=1.5;
+ if(w==="Building skills"&&(a.includes("Classes, workshops, or summer programs")||a.some(x=>x.startsWith("Compete"))))b+=1.5;
+ if(w==="Service hours"&&a.includes("Volunteer or do service projects"))b+=3;
+ if(w==="Earning money"&&/^Paid/.test(o.paid))b+=4;
+ if(w==="Just for fun"&&["Club","Teen Program"].includes(o.type))b+=1}return b}
+function score(a){
+ const text=[a.learn,a.free,a.make,a.self].join(" "),U=terms(text),AV=terms(a.avoid),want=a.want||[],why=a.why||[],free=a.free2||[];
+ const mins=TIME[a.time]||99999,g=GRADES.indexOf(a.grade)+9,college=g>=13;
+ const rows=ALL.map(o=>{let t=0;const hit=[];
+  for(const [s,[uw,word]] of U){const w=o.idx.get(s);if(w){t+=uw*w*idf(s);if(uw>=1&&!hit.includes(word))hit.push(word)}}
+  const wh=want.filter(x=>o.activity_types.includes(x));let raw=t+wh.length*3+reasonBonus(why,o);
+  let av=0;for(const s of AV.keys()){const w=o.idx.get(s);if(w)av+=w*idf(s)}raw=Math.max(0,raw-av*1.5);
+  let f=1;const gr=String(o.grades),r=gr.match(/^(\d+)-(\d+)$/),ag=gr.match(/Ages? (\d+)-(\d+)/);
+  if(r&&(g<+r[1]||g>+r[2]))f*=.2;
+  if(/college/i.test(gr)&&!/high school|9-12/i.test(gr)&&!college)f*=.15;
+  if(/Juniors and seniors/i.test(gr)&&(g<11||g>12))f*=.3;if(/Sophomores and juniors/i.test(gr)&&(g<10||g>11))f*=.3;if(/Rising seniors/i.test(gr)&&g!==11)f*=.3;
+  if(ag&&college)f*=.3;
+  const om=oppMins(o);if(om&&om>mins)f*=.5;
+  if(a.fmt==="In person only"&&o.format==="Online")f*=.3;
+  if(a.fmt==="Online only"&&o.format==="In person")f*=.3;
+  if(o.transportation_needed.startsWith("Yes")){if((a.ride||"").startsWith("No"))f*=.3;else if(a.ride==="Sometimes")f*=.8}
+  if(a.paid==="Paid only"&&!/^Paid/.test(o.paid))f*=.3;
+  if(o.meeting_slots.length&&free.length&&!o.meeting_slots.some(x=>free.includes(x)))f*=.7;
+  if(/^Closed/.test(o.status))f*=.6;
+  return{o,raw:raw*f,hit,wh}});
+ const HI={};for(const r of rows)HI[r.o.scope]=Math.max(HI[r.o.scope]||0,r.raw);
+ for(const r of rows){const hi=HI[r.o.scope];r.score=hi>0?Math.max(1,Math.min(10,Math.round(1+9*r.raw/hi))):1;
+  r.why=r.hit.length?"Matches your interest in "+r.hit.slice(0,3).join(", ")+".":r.wh.length?"Fits what you want to do: "+r.wh[0].split(" (")[0].toLowerCase()+".":"Not a strong match for your answers yet."}
+ return rows.sort((x,y)=>y.raw-x.raw||(/^Open/.test(y.o.status)-/^Open/.test(x.o.status))||x.o.name.localeCompare(y.o.name))}
+/* ---------- state ---------- */
+let S={tab:"School",step:0,ans:{},done:false,mine:{},seen:{},open:{},f:{fmt:"any",openOnly:false,sort:"match"},q:""};
+try{const x=JSON.parse(localStorage.getItem(LS));if(x)S=Object.assign(S,x)}catch(e){}
+const save=()=>{try{localStorage.setItem(LS,JSON.stringify(S))}catch(e){}};
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let cache=null,ck="";const results=()=>{const k=JSON.stringify(S.ans);if(k!==ck){cache=score(S.ans);ck=k}return cache};
+/* ---------- views ---------- */
+function field(q){const v=S.ans[q.id];let h="";
+ if(q.k==="select")h=`<select data-id="${q.id}"><option value="">Choose…</option>${q.o.map(o=>`<option${v===o?" selected":""}>${esc(o)}</option>`).join("")}</select>`;
+ else if(q.k==="text")h=`<textarea rows="3" data-id="${q.id}" placeholder="${esc(q.ph||"")}">${esc(v)}</textarea>`;
+ else if(q.k==="radio")h=q.o.map(o=>`<label class="opt"><input type="radio" name="${q.id}" data-id="${q.id}" value="${esc(o)}"${v===o?" checked":""}>${esc(o)}</label>`).join("");
+ else h=q.o.map(o=>`<label class="opt"><input type="checkbox" data-id="${q.id}" data-max="${q.max||99}" value="${esc(o)}"${(v||[]).includes(o)?" checked":""}>${esc(o)}</label>`).join("");
+ return`<div class="q"><label class="ql">${q.t}${q.opt?"":" *"}</label>${h}</div>`}
+function quizView(){const p=PAGES[S.step];return`<section class="quiz"><div class="prog"><i style="width:${(S.step+1)/PAGES.length*100}%"></i></div><p class="mut">Section ${S.step+1} of ${PAGES.length}</p><h1>${p.title}</h1>${S.step===0?`<p class="mut">Tell us what you’re into, in your own words, and we’ll put the clubs and opportunities that fit you best at the top of your list. Takes about 2 minutes.</p><p class="mut">Your answers are only used to rank opportunities for you and stay on this device.</p>`:""}${p.intro?`<p class="mut">${p.intro}</p>`:""}${p.q.map(field).join("")}<div class="err" id="err"></div><div class="row">${S.step?`<button class="btn" data-act="back">Back</button>`:""}<button class="btn pri" data-act="next">${S.step===PAGES.length-1?"See my results":"Next"}</button></div></section>`}
+function card(r,i){const o=r.o,id=o.id,open=S.open[id],mine=S.mine[id];
+ return`<article class="card"><h3>${esc(o.name)}</h3><div class="meta">${esc(o.type)} · ${o.scope==="School"?"Sponsor":"Host"}: ${esc(o.sponsor)}</div><p style="margin:0">${esc(o.description)}</p>
+<p class="fit"><b>Good fit if you are:</b> ${esc(o.good_fit_if_you_are.join(", "))}</p><p class="why">${esc(r.why)}</p>
+<div class="facts"><span><b>Meets:</b> ${esc(o.meets)}</span><span><b>Time:</b> ${esc(o.time_commitment)}</span><span><b>Grades:</b> ${esc(o.grades)}</span><span><b>Status:</b> ${esc(mine?"Already in":o.status)}</span></div>
+${open?`<div class="more"><span><b>How to join:</b> ${esc(o.how_to_join)}</span><span><b>Where:</b> ${esc(o.location)} (${esc(o.format)})</span><span><b>Cost / pay:</b> ${esc(o.cost)} · ${esc(o.paid)}</span>${o.key_dates?`<span><b>Key dates:</b> ${esc(o.key_dates)}</span>`:""}${o.sponsor_email?`<span><b>Contact:</b> ${esc(o.sponsor_email)}</span>`:""}${o.link?`<a href="${esc(o.link)}" target="_blank" rel="noopener">Visit website</a>`:""}${o.notes?`<span class="mut">${esc(o.notes)}</span>`:""}<span><button class="btn" data-act="mine" data-id="${id}">${mine?"Remove from My Activities":"I’m already in this"}</button></span></div>`:""}
+<div class="bot"><div class="match">${i<3&&r.score>=7?`<span class="tag">Best match</span>`:""}<span>Match level</span><span class="meter"><i style="width:${r.score*10}%"></i></span><b>${r.score} / 10</b></div><button class="btn pri" data-act="explore" data-id="${id}">${open?"Hide":"Explore"}</button></div></article>`}
+function listView(){const tab=S.tab;if(tab==="School"&&!(S.ans.school||"").startsWith("The Village"))return`<h1>Clubs at your school</h1><div class="empty">We don’t have a club list for your school yet. Check the Community and Explore tabs.</div>`;
+ const q=S.q.toLowerCase(),f=S.f;let rows=results().filter(r=>r.o.scope===tab&&!S.mine[r.o.id]);
+ if(q)rows=rows.filter(r=>(r.o.name+" "+r.o.description+" "+r.o.tags.join(" ")+" "+r.o.category).toLowerCase().includes(q));
+ if(f.fmt!=="any")rows=rows.filter(r=>r.o.format.includes(f.fmt));if(f.openOnly)rows=rows.filter(r=>/^(Open|Sign-ups|Contact)/.test(r.o.status));
+ if(f.sort==="az")rows=[...rows].sort((a,b)=>a.o.name.localeCompare(b.o.name));
+ const title={School:"Clubs at your school",Community:"Community opportunities in Houston",Explore:"Explore programs, internships and competitions"}[tab];
+ const heard=[...terms([S.ans.learn,S.ans.free,S.ans.make,S.ans.self].join(" ")).values()].filter(x=>x[0]>=1).map(x=>x[1]);
+ return`<h1>${title}</h1><p class="mut">Sorted by your quiz answers, best match first. <a href="#" data-act="mypage" style="color:var(--acc)">See your results and what you’re already doing</a></p>
+<div class="bar"><details class="flt"><summary>Filters</summary><div class="panel"><label>Format <select data-f="fmt"><option value="any">Any</option><option${f.fmt==="In person"?" selected":""}>In person</option><option${f.fmt==="Online"?" selected":""}>Online</option></select></label><label><input type="checkbox" data-f="openOnly"${f.openOnly?" checked":""}> Only show open or contact-to-join</label><label>Sort <select data-f="sort"><option value="match">Best match</option><option value="az"${f.sort==="az"?" selected":""}>A to Z</option></select></label></div></details><button class="btn retake" data-act="retake">Retake quiz</button></div>
+${rows.length?rows.map(card).join(""):`<div class="empty">Nothing matches that search or filter.</div>`}`}
+function myView(){const R=results(),mine=R.filter(r=>S.mine[r.o.id]),seen=R.filter(r=>S.open[r.o.id]&&!S.mine[r.o.id]);
+ const heard=[...new Set([...terms([S.ans.learn,S.ans.free,S.ans.make,S.ans.self].join(" ")).values()].filter(x=>x[0]>=1).map(x=>x[1]))].slice(0,14);
+ const a=S.ans;return`<h1>My Activities</h1><h2 class="sec">Your quiz results</h2><p class="mut">Here’s what we heard from your answers:</p><div class="chips">${heard.map(w=>`<span class="chip">${esc(w)}</span>`).join("")||"<span class='mut'>Nothing yet. Take the quiz.</span>"}</div>
+<p class="mut">${esc(a.grade||"")} · ${esc(a.school||"")}<br>Wants to: ${esc((a.want||[]).join(", ")||"–")}<br>Reasons: ${esc((a.why||[]).join(", ")||"–")} · Time: ${esc(a.time||"–")} · Format: ${esc(a.fmt||"–")}</p><p><button class="btn" data-act="retake">Retake quiz</button></p>
+<h2 class="sec">What you’re already doing</h2>${mine.length?mine.map(card).join(""):`<div class="empty">Nothing yet. Open an opportunity and choose “I’m already in this.”</div>`}
+<h2 class="sec">Opportunities you’ve explored</h2>${seen.length?seen.map(card).join(""):`<div class="empty">Tap Explore on any opportunity and it will show up here.</div>`}`}
+function render(){document.getElementById("brand").textContent=APP;
+ const nav=document.getElementById("nav");nav.style.visibility=S.done?"visible":"hidden";nav.innerHTML=TABS.map(t=>`<button class="${t===S.tab?"on":""}" data-tab="${t}">${t}</button>`).join("");
+ document.getElementById("q").style.visibility=S.done?"visible":"hidden";
+ document.getElementById("main").innerHTML=!S.done?quizView():S.tab==="My Activities"?myView():listView();save()}
+/* ---------- events ---------- */
+function valid(){const p=PAGES[S.step];for(const q of p.q){if(q.opt)continue;const v=S.ans[q.id];if(!v||(Array.isArray(v)&&!v.length)||(typeof v==="string"&&v.trim().length<(q.k==="text"?3:1)))return"Please answer: "+q.t.replace(/ \(.*\)/,"")}return""}
+function init(){render();
+ document.addEventListener("click",e=>{const t=e.target.closest("[data-tab],[data-act]");if(!t)return;
+  if(t.dataset.tab){S.tab=t.dataset.tab;render();scrollTo(0,0);return}
+  const a=t.dataset.act,id=t.dataset.id;e.preventDefault();
+  if(a==="settings")dlg.showModal();else if(a==="close")dlg.close();
+  else if(a==="next"){const m=valid();if(m){err.textContent=m;return}if(S.step<PAGES.length-1)S.step++;else{S.done=true;S.tab=(S.ans.school||"").startsWith("The Village")?"School":"Explore"}render();scrollTo(0,0)}
+  else if(a==="back"){S.step=Math.max(0,S.step-1);render()}
+  else if(a==="retake"){S.done=false;S.step=0;S.tab="School";dlg.open&&dlg.close();render();scrollTo(0,0)}
+  else if(a==="clear"){S={tab:"School",step:0,ans:{},done:false,mine:{},seen:{},open:{},f:S.f,q:""};try{localStorage.removeItem(LS)}catch(x){}dlg.close();render()}
+  else if(a==="explore"){S.open[id]=!S.open[id];render()}
+  else if(a==="mine"){S.mine[id]=!S.mine[id];render()}
+  else if(a==="mypage"){S.tab="My Activities";render()}});
+ document.addEventListener("change",e=>{const t=e.target;
+  if(t.dataset.f){S.f[t.dataset.f]=t.type==="checkbox"?t.checked:t.value;render();return}
+  const id=t.dataset.id;if(!id)return;
+  if(t.type==="checkbox"){const box=[...document.querySelectorAll(`input[data-id="${id}"]:checked`)];if(box.length>+t.dataset.max){t.checked=false;return}S.ans[id]=box.map(x=>x.value)}
+  else S.ans[id]=t.value;save()});
+ document.addEventListener("input",e=>{const t=e.target;if(t.tagName==="TEXTAREA"){S.ans[t.dataset.id]=t.value;save()}});
+ document.getElementById("q").addEventListener("input",e=>{S.q=e.target.value;if(S.tab==="My Activities")S.tab="School";const main=document.getElementById("main");main.innerHTML=listView();save()});
+ document.getElementById("q").value=S.q}
+if(typeof document!=="undefined")init();
+</script></body></html>
