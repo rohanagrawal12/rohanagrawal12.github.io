@@ -10,9 +10,16 @@ Open `index.html` in a browser. That's it.
 2. Settings > Pages > Deploy from branch > `main` / root.
 
 ## How it works
-- First visit: 3-page quiz (about 2 minutes). On submit, results show instantly.
-- Everything is saved in the browser (`localStorage`, key `ofinder.v1`): quiz answers, which page you were on, filters, search, "Already in" and "Explored" lists. A refresh restores it all.
-- Tabs: School, Community, Explore, My Activities. Settings (gear) can retake the quiz or clear saved data.
+- The lists are visible right away. The quiz is optional: take it when you want results sorted for you.
+- Quiz pages: about you, what you like (including what you want to learn), follow-up skill and interest questions when your answers mention a topic, then what you’re looking for. Opportunity types and reasons have no pick limit.
+- Everything is saved in the browser (`localStorage`, key `ofinder.v1`): quiz answers, filters, search, "Already in" and "Explored" lists. A refresh restores it.
+- Tabs: School, Community, Explore, My Activities. Settings (gear or your name) has the account, light/dark/match-device, retake, and clear.
+- Accounts are stored on this device only (`ofinder.accounts.v1`). There is no server login yet.
+- School clubs that were held back for missing details, including DECA and FBLA, are on the School list with a status such as “Pending approval.” Use the Status filter to show only those, or only clubs ready to join.
+- Filters are a compact row: category, format, status, and sort.
+
+## Branding
+Edit the `BRAND` object at the top of the script in `index.src.html` (name, mark, school name, light colors, dark colors), then run `node build.js`. That regenerates `index.html`.
 
 ## Match level (1-10)
 Computed per student, per tab, in `score()` inside `index.html`:
@@ -24,11 +31,11 @@ Computed per student, per tab, in `score()` inside `index.html`:
 6. Scores are scaled so the best match in each tab is 10.
 
 ## Data
-`data/opportunities.json` has the full list. `index.html` has a copy embedded in `const DATA`. To change data, edit the JSON and regenerate that line (or replace the embedded object). `index.src.html` is the same app with a `__DATA__` placeholder.
+`data/opportunities.json` has the full list, including `extra_opportunities_not_enough_info`. The app shows those extras on the School tab. `index.html` has a copy embedded in `const DATA`. To change data or the page, edit `data/opportunities.json` and/or `index.src.html`, then run `node build.js`.
 Fields are explained in the JSON's `about` section. 68 extra School clubs with too little info are listed at the bottom of the JSON.
 
 ## Not built yet
-Accounts and a real database (data is per device right now), first-time tutorial, help page, club leader submissions, admin approval, "Suggest a club", real club-by-club live data.
+Online accounts and a real database (accounts and answers stay on this device), first-time tutorial, help page, club leader submissions, admin approval, "Suggest a club", real club-by-club live data.
 Community and Explore details need checking against official sites (see each row's notes).
 
 ## Prompt to give Cursor
