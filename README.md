@@ -1,42 +1,32 @@
-# Opportunity Finder (working name)
+# Bulletin: Find your thing.
 
-Student opportunity finder for The Village School (Houston). One page, no build step.
+Bulletin helps students find clubs, volunteering and programs that fit them. Answer a short quiz in your own words and every opportunity is ranked with a 1-10 match level. It starts with The Village School (Houston), plus Houston community programs and national or online programs.
 
-## Run it
-Open `index.html` in a browser. That's it.
+Live: https://rohanagrawal12.github.io
 
-## Put it on GitHub Pages
-1. Create a repo and upload these files.
-2. Settings > Pages > Deploy from branch > `main` / root.
+One page, no build step. Open `index.html` in a browser to try it.
 
-## How it works
-- The lists are visible right away. The quiz is optional: take it when you want results sorted for you.
-- Quiz pages: about you, what you like (including what you want to learn), follow-up skill and interest questions when your answers mention a topic, then what you’re looking for. Opportunity types and reasons have no pick limit.
-- Everything is saved in the browser (`localStorage`, key `ofinder.v1`): quiz answers, filters, search, "Already in" and "Explored" lists. A refresh restores it.
-- Tabs: School, Community, Explore, My Activities. Settings (gear or your name) has the account, light/dark/match-device, retake, and clear.
-- Accounts are stored on this device only (`ofinder.accounts.v1`). There is no server login yet.
-- School clubs that were held back for missing details, including DECA and FBLA, are on the School list with a status such as “Pending approval.” Use the Status filter to show only those, or only clubs ready to join.
-- Filters are a compact row: category, format, status, and sort.
+## What is here
+- `index.html`: the whole app (this is what GitHub Pages serves)
+- `data/`: the opportunity list (`opportunities.json` and a spreadsheet copy)
+- `assets/`: logos, app icons, previews and a demo screen recording
+- `docs/`: brand sheet, Synthesia video prompt, pitch answers, landing page copy
+- `supabase/schema.sql`: database tables for accounts, saves, posts, friends and messages
+- `CLAUDE.md`: project notes so an AI assistant can pick up where the last session stopped
 
-## Branding
-Edit the `BRAND` object at the top of the script in `index.src.html` (name, mark, school name, light colors, dark colors), then run `node build.js`. That regenerates `index.html`.
+## Everything is saved in the browser for now
+Quiz answers, saved items, accounts and messages are stored in `localStorage` (keys `bl.state`, `bl.users`, `bl.msgs`, `bl.custom`). Real accounts through Supabase are the next step.
 
-## Match level (1-10)
-Computed per student, per tab, in `score()` inside `index.html`:
-1. Free-text answers become keywords (with a small synonym list, e.g. "doctor" also matches medicine and healthcare).
-2. Keywords are compared to each opportunity's tags (heaviest), name, category, "good fit" traits and description. Rare matches count more.
-3. Bonuses: matches the "what do you want to do most" picks and the "main reason" picks.
-4. "Don't want to do" answers subtract points.
-5. Filters multiply the score down (grade mismatch, too many hours, wrong format, no ride, paid only, not free at that time, closed).
-6. Scores are scaled so the best match in each tab is 10.
+## Add the explainer video to the homepage
+Upload the video to YouTube as Unlisted. In `index.html`, find `const VIDEO=""` and paste the link, for example `const VIDEO="https://youtu.be/XXXXXXXXXXX"`. Or put an MP4 in `assets/` and use `const VIDEO="assets/explainer.mp4"`.
 
-## Data
-`data/opportunities.json` has the full list, including `extra_opportunities_not_enough_info`. The app shows those extras on the School tab. `index.html` has a copy embedded in `const DATA`. To change data or the page, edit `data/opportunities.json` and/or `index.src.html`, then run `node build.js`.
-Fields are explained in the JSON's `about` section. 68 extra School clubs with too little info are listed at the bottom of the JSON.
+## Supabase
+1. In the Supabase project, open SQL Editor, click New query, paste the SQL code from `supabase/schema.sql` (the code, not the file name) and click Run. Five tables appear under Table Editor.
+2. Copy the Project URL and the publishable (anon) key. Never share or commit the secret or service_role key.
+3. Browser library: `https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2`.
 
-## Not built yet
-Online accounts and a real database (accounts and answers stay on this device), first-time tutorial, help page, club leader submissions, admin approval, "Suggest a club", real club-by-club live data.
-Community and Explore details need checking against official sites (see each row's notes).
+## Custom domain
+In GitHub: Settings > Pages > Custom domain. At the domain registrar, add four A records (185.199.108.153, 185.199.109.153, 185.199.110.153, 185.199.111.153) and a `www` CNAME to the github.io address. Turn on Enforce HTTPS once it is available.
 
-## Prompt to give Cursor
-"Convert this single-file app in index.html into a Vite + React project. Keep the matching logic in its own module, load data/opportunities.json, keep localStorage persistence, and keep the UI the same."
+## License
+GPL-3.0. See `LICENSE`.
