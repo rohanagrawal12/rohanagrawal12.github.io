@@ -29,6 +29,7 @@ Check phone (390x844) and desktop (1440x900), in light and dark.
 
 ## Brand
 Colours: Ink #111113, Gray #6B6B72, Fog #E1E1E4, Paper #F3F3F4, Pin Red #D6452F (optional Forest theme #1F4D36). Font: Inter (Bold for logo and headings, Regular for the rest). Logo: four rounded tiles (one red = "your match") next to the lowercase wordmark "bulletin" with a red dot on the i. Tagline: Find your thing. Details in `docs/brand.md`.
+UI style: corners are only slightly rounded (about 6-8px; no pills or circles), outlines are clearly visible (light theme `--line` #C4C4CA) and secondary text is dark enough to read (light theme `--mut` #4F4F56). The owner asked for this on 2026-11-19 because the page felt soft and bubbly. Keep it that way.
 
 ## Where things stand (2026-11-13)
 Done: the site, logo, brand board, and the Supabase tables (`supabase/schema.sql` was run in the Supabase project "Bulletin", with row-level security on).
