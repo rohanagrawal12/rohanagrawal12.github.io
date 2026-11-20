@@ -1,6 +1,8 @@
 # Landing page copy (HOME, ABOUT, STORE)
 Use this in Wix if your teacher requires a Wix page, or keep it as the text for the Bulletin site.
 
+This copy is already live on the three welcome screens of the site: HOME is screen 1 (with the explainer video), ABOUT is screen 2 (About us), and STORE is screen 3 (Get started). The code is the `SL` list in `index.html`. The email waitlist box is not built yet.
+
 ## HOME
 Headline: Find your thing.
 Sub: Take a two-minute quiz and Bulletin ranks every club, volunteer spot and program at your school by how well it fits you.
