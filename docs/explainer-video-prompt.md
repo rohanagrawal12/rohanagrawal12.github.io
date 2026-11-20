@@ -37,5 +37,5 @@ Start from a blank 16:9 video. Make 5 scenes with no avatar. In each scene, pick
 - Clear call to action to the landing page: scene 5 (go to the website, click Take the quiz, it is free)
 
 ## Finish
-Generate, watch it once, fix any wrong words or pauses, and delete any person that appears on screen (keep the voice). Then download the MP4, or copy the share link and the embed code. Send me the MP4, or upload it to YouTube as Unlisted and send the link, and I will put it on the homepage.
+Generate, watch it once, fix any wrong words or pauses, and delete any person that appears on screen (keep the voice). Then click Share, Create link and Copy link. Send me that link (the embed code is not needed), or the MP4, or a YouTube Unlisted link, and I will put it on the homepage. The first video made from this prompt is already on the homepage; this only matters for a new one.
 Check what your Synthesia plan allows (video length, watermark, downloads). Free plans usually have limits.
