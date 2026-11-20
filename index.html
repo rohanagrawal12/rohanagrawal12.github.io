@@ -76,7 +76,7 @@ h1,h2,h3{font-family:inherit;letter-spacing:-.02em}h1,h2{font-weight:800}h3{font
 .fs .box{background:var(--card);border:1px solid var(--line);border-top:6px solid var(--bar);border-radius:8px;padding:26px 26px 22px;box-shadow:0 1px 2px rgba(0,0,0,.05),0 14px 34px rgba(0,0,0,.06)}
 @media(max-width:760px){.brand .wm svg{height:20px}}
 .col.wide{max-width:780px}.vid{width:100%;max-width:640px;aspect-ratio:16/9;border-radius:8px;overflow:hidden;background:#000;margin:14px auto 4px}.vid iframe,.vid video{width:100%;height:100%;border:0;display:block}
-.vid.thumb{position:relative;display:block;background:#111113;color:#fff;text-decoration:none}.vid.thumb img{width:100%;height:100%;object-fit:cover;display:block}.vid .tag{position:absolute;left:10px;bottom:10px;display:flex;align-items:center;gap:6px;background:#111113;color:#fff;border:1px solid rgba(255,255,255,.28);border-radius:5px;padding:6px 9px;font-size:12px;font-weight:600;line-height:1}.vid .tag i{display:grid;font-style:normal}.vid .tag svg{width:12px;height:12px}
+.vid.thumb{position:relative;display:block;background:#111113;color:#fff;text-decoration:none}.vid.thumb img{width:100%;height:100%;object-fit:cover;display:block}.vid .tag{position:absolute;left:10px;bottom:10px;display:flex;align-items:center;gap:6px;background:#111113;color:#fff;border:1px solid rgba(255,255,255,.28);border-radius:5px;padding:6px 9px;font-size:12px;font-weight:600;line-height:1}.vid .tag i{display:grid;font-style:normal}.vid .tag svg{width:12px;height:12px}.vid.play{width:100%;padding:0;border:0;cursor:pointer;font:inherit}.vid.play:hover .tag,.vid.play:focus-visible .tag{background:#D6452F;border-color:#D6452F}.vid.play:focus-visible{outline:2px solid #D6452F;outline-offset:3px}
 .cta2{margin:12px 0 4px}.wbtn.big{padding:15px 38px;font-size:17px;border-radius:8px}.sl2.y .wbtn.big{background:#111113;color:#fff}
 @media(max-width:760px){.mid{padding-top:8px}.mid h1{font-size:30px}}
 </style></head><body>
@@ -204,14 +204,19 @@ const SL=[["WELCOME 01 / 03","Welcome to "+BRAND+"!","Find your thing. Let’s s
 const TITLE="Bulletin: Find your thing. Clubs and programs for students",MORE=20;
 const VIDEO="";
 const THUMB="assets/video-thumbnail.png";
-function videoBox(){const v=VIDEO.trim(),yt=v.match(/(?:youtu\.be\/|[?&]v=|youtube\.com\/(?:embed|shorts)\/)([\w-]{11})/),vm=v.match(/vimeo\.com\/(?:video\/)?(\d+)/),sy=v.match(/synthesia\.io\/embeds\/videos\/([\w-]+)/i),fr=src=>`<div class="vid"><iframe src="${src}" title="${BRAND} explainer video" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>`,PL='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>';
-  const th=l=>`<img src="${THUMB}" alt="" width="1920" height="1080" decoding="async"><span class="tag">${l}</span>`;
-  if(yt)return fr("https://www.youtube-nocookie.com/embed/"+yt[1]);
-  if(vm)return fr("https://player.vimeo.com/video/"+vm[1]);
-  if(sy)return fr("https://share.synthesia.io/embeds/videos/"+sy[1]);
-  if(v&&(/\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(v)||!/^https?:/i.test(v)))return`<div class="vid"><video controls playsinline preload="metadata" poster="${THUMB}" src="${esc(v)}"></video></div>`;
-  if(v)return`<a class="vid thumb" href="${esc(v)}" target="_blank" rel="noopener" aria-label="Watch the ${BRAND} explainer video, opens in a new tab">${th(`<i>${PL}</i>Watch the video · opens in a new tab`)}</a>`;
+function vidSrc(){const v=VIDEO.trim(),yt=v.match(/(?:youtu\.be\/|[?&]v=|youtube\.com\/(?:embed|shorts)\/)([\w-]{11})/),vm=v.match(/vimeo\.com\/(?:video\/)?(\d+)/),sy=v.match(/synthesia\.io\/embeds\/videos\/([\w-]+)/i);
+  if(yt)return{f:"https://www.youtube-nocookie.com/embed/"+yt[1]+"?autoplay=1&rel=0&playsinline=1"};
+  if(vm)return{f:"https://player.vimeo.com/video/"+vm[1]+"?autoplay=1"};
+  if(sy)return{f:"https://share.synthesia.io/embeds/videos/"+sy[1]+"?autoplay=1"};
+  if(v&&(/\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(v)||!/^https?:/i.test(v)))return{m:v};
+  return v?{l:v}:{}}
+function videoBox(){const o=vidSrc(),PL='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>',th=l=>`<img src="${THUMB}" alt="" width="1920" height="1080" decoding="async"><span class="tag">${l}</span>`;
+  if(o.f||o.m)return`<button type="button" class="vid thumb play" data-act="playvid" aria-label="Play the ${BRAND} explainer video">${th(`<i>${PL}</i>Play the video`)}</button>`;
+  if(o.l)return`<a class="vid thumb" href="${esc(o.l)}" target="_blank" rel="noopener" aria-label="Watch the ${BRAND} explainer video, opens in a new tab">${th(`<i>${PL}</i>Watch the video · opens in a new tab`)}</a>`;
   return`<div class="vid thumb" role="img" aria-label="${BRAND} explainer video, coming soon">${th("Coming soon")}</div>`}
+function playVideo(){const o=vidSrc(),b=document.querySelector(".vid.play");if(!b||!(o.f||o.m))return;
+  b.outerHTML=o.f?`<div class="vid"><iframe src="${o.f}" title="${BRAND} explainer video" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe></div>`:`<div class="vid"><video controls autoplay playsinline poster="${THUMB}" src="${esc(o.m)}"></video></div>`;
+  const v=document.querySelector(".vid video");if(v){const p=v.play();if(p&&p.catch)p.catch(()=>{})}}
 function slideView(){const [cap,t,p,h,c,art]=SL[S.slide],first=S.slide===0;return`<section class="sl2 ${c}"><div class="col${first?" wide":""}"><div class="top"><span class="wm2">${WORD}</span>${S.seen?`<button class="pill" data-act="skip">Open the app →</button>`:`<button class="pill" data-act="login">I’m not new · Log in</button>`}</div><div class="mid">${first?"":`<div class="art">${art}</div>`}<div class="cap">${cap}</div><h1>${t}</h1><p>${p}</p>${first?videoBox()+`<div class="cta2"><button class="wbtn big" data-act="quiz">Take the quiz</button></div>`:""}<small>${h}</small></div><div class="dots">${SL.map((_,i)=>`<i class="${i===S.slide?"on":""}"></i>`).join("")}</div><div class="bb">${S.slide?`<button class="gbtn" data-act="sback">‹ Back</button>`:"<span></span>"}<button class="wbtn" data-act="snext">${first?"How it works →":S.slide===2&&S.seen?"Open the app →":"Next →"}</button></div></div></section>`}
 const authStage=()=>`<section class="fs"><div class="ico">${PIN}</div><div class="eyebrow">STEP 1</div><h1>First, make an account.</h1><p class="mut">Or try ${BRAND} as a guest. You don’t need an account for the demo.</p><div class="stack"><button class="btn big" disabled>Continue with Google · coming soon</button><button class="btn big" disabled>Continue with Microsoft · coming soon</button><button class="btn big" data-act="signup">Continue with email</button><div class="or">or</div><button class="btn pri big" data-act="guest">Continue as guest</button><button class="lk" data-act="login">I already have an account</button></div><p class="note">Google and Microsoft sign-in will be available once a login service is connected. Guest and email accounts are saved on this device.</p></section>`;
 const promptStage=()=>`<section class="fs"><div class="ico">${IC.list}</div><div class="eyebrow">ONE MORE THING</div><h1>Do you wanna start with a quiz?</h1><p class="mut">Tell us what you’re into, and we’ll put your best matches first. Takes about 2 minutes.</p><div class="stack"><button class="btn pri big" data-act="quiz">Yep, take the quiz →</button><button class="btn big" data-act="notnow">Not now</button></div><p class="note">You can take it later from the School page.</p></section>`;
@@ -256,6 +261,7 @@ async function act(a,d){
  else if(a==="snext")S.slide<2?F({slide:S.slide+1}):F({stage:S.seen?"app":"auth"});else if(a==="sback")goBack(()=>F({slide:Math.max(0,S.slide-1)}));else if(a==="welcome")F({stage:"intro",slide:0});
  else if(a==="back")goBack(()=>F({step:Math.max(0,S.step-1),err:""}));
  else if(a==="next"){const m=valid();if(m){S.err=m;render();return}if(S.step<PAGES.length-1)F({step:S.step+1,err:""});else{S.done=true;if(me())me().ans=S.ans;F({stage:"loading"});runLoad()}}
+ else if(a==="playvid")playVideo();
  else if(a==="explore"){S.open[d.id]=!S.open[d.id];render()}else if(a==="mine"){S.mine[d.id]=!S.mine[d.id];render()}else if(a==="save"){S.saved[d.id]=!S.saved[d.id];render()}
  else if(a==="theme"){S.theme=d.v;render()}else if(a==="cat"){S.cat=d.v;S.lim=8;render()}else if(a==="more"){S.lim+=MORE;render()}else if(a==="seg"){S.seg=d.v;S.compose=null;render()}else if(a==="myact")go("My Activities",{seg:"doing"});else if(a==="goseg")go("My Activities",{seg:d.v,compose:null});
  else if(a==="clear"){try{["bl.state","bl.users","bl.msgs","bl.custom"].forEach(k=>localStorage.removeItem(k))}catch(x){}try{sessionStorage.removeItem("bl.visit");history.replaceState(null,"")}catch(x){}location.reload()}
