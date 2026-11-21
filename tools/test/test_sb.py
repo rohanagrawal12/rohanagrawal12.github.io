@@ -471,6 +471,155 @@ try:
     check('S15 local mode: it opens the same form with the prototype note', pg.evaluate("S.stage") == 'signup' and 'Prototype: accounts' in pg.locator('.box').inner_text())
     ctx.close()
 
+    # ---------- S17: change password ----------
+    NEWPW = 'brand-new-pw'
+    fake = Fake()
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'pw@example.com', state=dict(APP, tab='Settings'))
+    w(pg, 500)
+    check('S17 signed-in Settings has a Change password button', pg.locator('#main [data-act="chpw"]').count() == 1 and pg.locator('#main [data-act="chpw"]').inner_text() == 'Change password')
+    ctx.close()
+    ctx, pg, errs = newpage(b, D, Fake(), dict(APP, tab='Settings'))
+    check('S17 a guest has no Change password button', pg.locator('[data-act="chpw"]').count() == 0)
+    pg.evaluate("act('chpw')"); w(pg)
+    check('S17 a guest cannot open the screen by calling it directly', pg.evaluate("S.stage") == 'app')
+    ctx.close()
+    ctx, pg, errs = newpage(b, D, Fake(), dict(APP, tab='Settings'), local=True)
+    check('S17 in device-only mode there is no Change password button', pg.locator('[data-act="chpw"]').count() == 0)
+    ctx.close()
+
+    fake = Fake()
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'pw@example.com', state=dict(APP, tab='Settings'))
+    w(pg, 500)
+    pg.click('#main [data-act="chpw"]'); w(pg)
+    check('S17 the button opens the Change your password screen', pg.evaluate("S.stage") == 'chpw' and pg.locator('h1').inner_text() == 'Change your password')
+    check('S17 the screen names the account email so the person knows what to log in with', 'pw@example.com' in pg.locator('.box p').first.inner_text(), pg.locator('.box p').first.inner_text())
+    check('S17 both boxes are password boxes with the new-password hint for password managers', pg.get_attribute('#p_new', 'type') == 'password' and pg.get_attribute('#p_new2', 'type') == 'password' and pg.get_attribute('#p_new', 'autocomplete') == 'new-password' and pg.get_attribute('#p_new2', 'autocomplete') == 'new-password')
+    check('S17 a hidden username field helps password managers update the right login', pg.evaluate("(()=>{const u=document.querySelector('#af input[autocomplete=username]');return !!u&&u.value==='pw@example.com'&&u.hidden})()"))
+    check('S17 the top bar is hidden while the screen is open', not pg.locator('#hacct').is_visible() and pg.evaluate("document.body.classList.contains('full')"))
+    # Show / Hide
+    pg.fill('#p_new', NEWPW); pg.fill('#p_new2', NEWPW)
+    pg.click('[data-act="showpw"]'); w(pg, 100)
+    check('S17 Show passwords reveals both boxes and keeps what was typed', pg.get_attribute('#p_new', 'type') == 'text' and pg.get_attribute('#p_new2', 'type') == 'text' and pg.input_value('#p_new') == NEWPW and pg.locator('[data-act="showpw"]').inner_text() == 'Hide passwords')
+    pg.click('[data-act="showpw"]'); w(pg, 100)
+    check('S17 Hide passwords hides them again', pg.get_attribute('#p_new', 'type') == 'password' and pg.locator('[data-act="showpw"]').inner_text() == 'Show passwords' and pg.input_value('#p_new2') == NEWPW)
+    # mistakes caught here, with no request
+    n0 = len(fake.calls('PUT', '/auth/v1/user'))
+    pg.fill('#p_new', 'abc'); pg.fill('#p_new2', 'abc'); pg.click('[data-act="dochpw"]'); w(pg, 200)
+    check('S17 a password under 6 characters is stopped here with a plain message', pg.locator('.err').inner_text() == 'Choose a new password of 6+ characters.', pg.locator('.err').inner_text())
+    pg.fill('#p_new', NEWPW); pg.fill('#p_new2', ''); pg.click('[data-act="dochpw"]'); w(pg, 200)
+    check('S17 an empty second box asks to type it again', pg.locator('.err').inner_text() == 'Type the new password again.', pg.locator('.err').inner_text())
+    pg.fill('#p_new2', NEWPW + 'x'); pg.click('[data-act="dochpw"]'); w(pg, 200)
+    check('S17 two different passwords are stopped here', pg.locator('.err').inner_text() == 'The two passwords don’t match.', pg.locator('.err').inner_text())
+    check('S17 typed passwords are kept after a mistake', pg.input_value('#p_new') == NEWPW and pg.input_value('#p_new2') == NEWPW + 'x')
+    check('S17 none of those mistakes made a request', len(fake.calls('PUT', '/auth/v1/user')) == n0, len(fake.calls('PUT', '/auth/v1/user')) - n0)
+    # same password as now: the server says no
+    pg.fill('#p_new', PW); pg.fill('#p_new2', PW); pg.click('[data-act="dochpw"]'); w(pg, 500)
+    check('S17 the current password again gets a friendly message from the server', pg.locator('.err').inner_text() == 'That’s already your password. Choose a different one.' and fake.users['pw@example.com']['pw'] == PW, pg.locator('.err').inner_text())
+    check('S17 the button works again after an error', pg.locator('[data-act="dochpw"]').is_enabled() and pg.locator('[data-act="dochpw"]').inner_text() == 'Change password')
+    # a stricter server rule is shown as the server says it
+    fake.min_pw = 10
+    pg.fill('#p_new', 'short-ish'); pg.fill('#p_new2', 'short-ish'); pg.click('[data-act="dochpw"]'); w(pg, 500)
+    check('S17 a stricter password rule from the server is shown as the server says it', pg.locator('.err').inner_text() == 'Password should be at least 10 characters.', pg.locator('.err').inner_text())
+    fake.min_pw = 6
+    # no internet
+    pg.fill('#p_new', NEWPW); pg.fill('#p_new2', NEWPW); fake.fail = 'net'; pg.click('[data-act="dochpw"]'); w(pg, 800)
+    check('S17 no internet gives a plain message and keeps the typed passwords', pg.locator('.err').inner_text() == 'Can’t reach the server. Check your internet and try again.' and pg.input_value('#p_new') == NEWPW and fake.users['pw@example.com']['pw'] == PW, pg.locator('.err').inner_text())
+    fake.fail = None
+    # login too old for "secure password change"
+    fake.reauth = True; pg.click('[data-act="dochpw"]'); w(pg, 500)
+    check('S17 when the server wants a fresh login, it says to log out and log in again', pg.locator('.err').inner_text() == 'For your safety, log out and log in again, then change your password.' and fake.users['pw@example.com']['pw'] == PW, pg.locator('.err').inner_text())
+    fake.reauth = False
+    # success, with a double click
+    n0 = len(fake.calls('PUT', '/auth/v1/user'))
+    lab = pg.evaluate("()=>{window.__p=act('dochpw');act('dochpw');const b=document.querySelector('[data-act=\"dochpw\"]');return b?b.textContent:'(gone)'}")
+    pg.wait_for_function("document.querySelector('h1')&&document.querySelector('h1').textContent==='Password changed'", timeout=8000); w(pg, 300)
+    puts = fake.calls('PUT', '/auth/v1/user')[n0:]
+    check('S17 the button said "Please wait…" while working', lab == 'Please wait…', lab)
+    check('S17 one request for a double click', len(puts) == 1, len(puts))
+    check('S17 the request is a PUT of just the new password with the signed-in token and no other credentials', puts[0]['body'] == {'password': NEWPW} and (puts[0]['auth'] or '').startswith('Bearer at-') and puts[0]['auth'] != 'Bearer ' + KEY, (puts[0]['body'], puts[0]['auth']))
+    check('S17 the fake service saw no rule broken', fake.violations == [], fake.violations)
+    check('S17 the account password is now the new one', fake.users['pw@example.com']['pw'] == NEWPW and fake.pw_changes == ['pw@example.com'], fake.pw_changes)
+    check('S17 the success screen says so and shows the email', pg.locator('h1').inner_text() == 'Password changed' and 'pw@example.com' in pg.locator('.box').inner_text() and pg.locator('#p_new').count() == 0, pg.locator('.box').inner_text())
+    d = store(pg)
+    check('S17 the new password is not kept anywhere in the browser', all(NEWPW not in v and PW not in v for v in d.values()), [k for k, v in d.items() if NEWPW in v or PW in v])
+    check('S17 the person is still logged in here, with the same login', pg.evaluate("S.me") == 'pw@example.com' and sbs(pg)['uid'] == uid and not fake.calls('POST', '/auth/v1/token'))
+    pg.click('[data-act="back2"]'); w(pg, 800)
+    check('S17 Done goes back to Settings (the one before the screen)', pg.evaluate("S.stage") == 'app' and pg.evaluate("S.tab") == 'Settings' and pg.locator('#main h1').inner_text() == 'Settings', (pg.evaluate("S.stage"), pg.evaluate("S.tab")))
+    ctx.close()
+
+    # the old password stops working and the new one works, from a fresh browser (like another device)
+    ctx, pg, errs = newpage(b, D, fake, APP0)
+    tab(pg, 'Settings'); pg.click('#main [data-act="login"]'); w(pg)
+    pg.fill('#a_email', 'pw@example.com'); pg.fill('#a_pw', PW); pg.click('[data-act="dologin"]'); w(pg, 500)
+    check('S17 the old password no longer logs in', pg.locator('.err').inner_text() == 'Email or password is incorrect.' and pg.evaluate("S.me") is None, pg.locator('.err').inner_text())
+    pg.fill('#a_pw', NEWPW); pg.click('[data-act="dologin"]'); pg.wait_for_function("S.stage==='app'&&S.me", timeout=8000); w(pg, 500)
+    check('S17 the new password logs in on another device', pg.evaluate("S.me") == 'pw@example.com')
+    ctx.close()
+
+    # back out without changing anything, and the browser Back button
+    fake = Fake()
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'back@example.com', state=dict(APP, tab='Settings'))
+    w(pg, 500)
+    pg.click('#main [data-act="chpw"]'); w(pg)
+    pg.fill('#p_new', NEWPW); pg.fill('#p_new2', NEWPW)
+    pg.click('#full [data-act="back2"]'); w(pg, 800)
+    check('S17 the Back link returns to Settings and changes nothing', pg.evaluate("S.stage") == 'app' and pg.evaluate("S.tab") == 'Settings' and not fake.calls('PUT', '/auth/v1/user') and fake.users['back@example.com']['pw'] == PW)
+    pg.click('#main [data-act="chpw"]'); w(pg)
+    check('S17 opening it again starts with empty boxes', pg.input_value('#p_new') == '' and pg.input_value('#p_new2') == '')
+    pg.go_back(); w(pg, 600)
+    check('S17 the browser Back button leaves the screen', pg.evaluate("S.stage") == 'app' and pg.evaluate("S.tab") == 'Settings', (pg.evaluate("S.stage"), pg.evaluate("S.tab")))
+    # Enter key submits
+    pg.click('#main [data-act="chpw"]'); w(pg)
+    pg.fill('#p_new', NEWPW); pg.fill('#p_new2', NEWPW); pg.press('#p_new2', 'Enter')
+    pg.wait_for_function("document.querySelector('h1')&&document.querySelector('h1').textContent==='Password changed'", timeout=8000)
+    check('S17 the Enter key changes the password', fake.users['back@example.com']['pw'] == NEWPW)
+    ctx.close()
+
+    # reload on the screen keeps it; a reload with no login falls back to the app
+    fake = Fake()
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'rel@example.com', state=dict(APP, tab='Settings'))
+    w(pg, 500)
+    pg.click('#main [data-act="chpw"]'); w(pg)
+    pg.reload(); w(pg, 800)
+    check('S17 reloading on the screen shows the empty form again (still logged in)', pg.evaluate("S.stage") == 'chpw' and pg.locator('#p_new').count() == 1 and pg.evaluate("S.me") == 'rel@example.com')
+    hl = pg.evaluate("history.length")
+    pg.evaluate("localStorage.removeItem('bl.sb')"); pg.reload(); w(pg, 800)
+    check('S17 reloading on the screen with no login adds no extra Back-button step', pg.evaluate("history.length") == hl, (hl, pg.evaluate("history.length")))
+    check('S17 reloading on the screen with no login falls back to the app, not a blank page', pg.evaluate("S.stage") == 'app' and pg.locator('#main h1').count() == 1 and pg.locator('#full').inner_text().strip() == '', (pg.evaluate("S.stage"), pg.locator('#full').inner_text()[:80]))
+    ctx.close()
+
+    # an expired token is refreshed and the change is retried once
+    fake = Fake()
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'exp@example.com', state=dict(APP, tab='Settings'), ttl=-100)
+    w(pg, 800)
+    pg.click('#main [data-act="chpw"]'); w(pg)
+    pg.fill('#p_new', NEWPW); pg.fill('#p_new2', NEWPW); pg.click('[data-act="dochpw"]')
+    pg.wait_for_function("document.querySelector('h1')&&document.querySelector('h1').textContent==='Password changed'", timeout=8000)
+    check('S17 an expired login is refreshed first and the change still goes through', fake.users['exp@example.com']['pw'] == NEWPW and any(c['q'].get('grant_type') == 'refresh_token' for c in fake.calls('POST', '/auth/v1/token')))
+    ctx.close()
+    fake = Fake()
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'f401@example.com', state=dict(APP, tab='Settings'))
+    w(pg, 800)
+    pg.click('#main [data-act="chpw"]'); w(pg)
+    pg.fill('#p_new', NEWPW); pg.fill('#p_new2', NEWPW); fake.force401 = 1; pg.click('[data-act="dochpw"]')
+    pg.wait_for_function("document.querySelector('h1')&&document.querySelector('h1').textContent==='Password changed'", timeout=8000)
+    check('S17 a 401 answer gets one refresh and one retry (two PUTs)', len(fake.calls('PUT', '/auth/v1/user')) == 2 and fake.users['f401@example.com']['pw'] == NEWPW, len(fake.calls('PUT', '/auth/v1/user')))
+    ctx.close()
+
+    # the login ends while the screen is open: the person lands on the log in screen with the notice
+    fake = Fake()
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'end@example.com', state=dict(APP, tab='Settings'))
+    w(pg, 800)
+    pg.click('#main [data-act="chpw"]'); w(pg)
+    pg.fill('#p_new', NEWPW); pg.fill('#p_new2', NEWPW)
+    pg.evaluate("SBS.exp=1;SBS.refresh='rt-gone';sbSave()")
+    pg.click('[data-act="dochpw"]'); w(pg, 1500)
+    inf = pg.locator('.inf').first.inner_text() if pg.locator('.inf').count() else '(no notice)'
+    check('S17 if the login has ended, the person gets the log in screen with the plain notice', pg.evaluate("S.stage") == 'login' and inf == 'Your login ended. Please log in again.' and fake.users['end@example.com']['pw'] == PW, (pg.evaluate("S.stage"), inf))
+    shown = pg.locator('.err').first.inner_text() if pg.locator('.err').count() else ''
+    check('S17 and no confusing network message is shown on that screen', shown == '' and 'reach the server' not in pg.locator('body').inner_text(), shown)
+    ctx.close()
+
     # ---------- S16: how it looks ----------
     fake = Fake(); fake.add_user('look@example.com', PW, {'name': 'Look Lee', 'role': 'Student', 'provider': False, 'org': ''})
     for label, vp, scheme, dsf in [('desktop-light', D, 'light', 1), ('desktop-dark', D, 'dark', 1), ('phone-light', P, 'light', 2), ('phone-dark', P, 'dark', 2)]:

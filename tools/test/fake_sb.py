@@ -9,7 +9,7 @@ KEY = 'sb_publishable_sQhpqrrzvwO1oyKf5loSCg_ezg0B8Uo'
 HOST = 'urotelcllngtcctheelb.supabase.co'
 SBRE = re.compile(r'https://' + re.escape(HOST) + r'/.*')
 CORS = {'access-control-allow-origin': '*', 'access-control-allow-headers': '*',
-        'access-control-allow-methods': 'GET,POST,PATCH,DELETE,OPTIONS', 'access-control-expose-headers': '*'}
+        'access-control-allow-methods': 'GET,POST,PUT,PATCH,DELETE,OPTIONS', 'access-control-expose-headers': '*'}
 
 
 class Fake:
@@ -27,6 +27,8 @@ class Fake:
         self.violations = []
         self.confirm = False  # "Confirm email" switched on
         self.rpc = False      # delete_my_account installed
+        self.reauth = False   # "Secure password change" on and the login is older than a day
+        self.pw_changes = []  # emails whose password was changed through PUT /auth/v1/user
         self.fail = None      # None | 'net' | '500' | '429'
         self.min_pw = 6
         self.ttl = 3600
@@ -130,6 +132,29 @@ class Fake:
                     return out(400, {'code': 400, 'error_code': 'refresh_token_not_found', 'msg': 'Invalid Refresh Token: Refresh Token Not Found'})
                 return out(200, self.session(uid))
             return out(400, {'code': 400, 'error_code': 'validation_failed', 'msg': 'unsupported grant type'})
+        if path == '/auth/v1/user' and request.method == 'PUT':
+            # the call supabase-js makes for updateUser({password}); a bearer token is required
+            expired = {'code': 401, 'error_code': 'bad_jwt', 'msg': 'invalid JWT: unable to parse or verify signature, token has invalid claims: token is expired'}
+            if self.force401 > 0:
+                self.force401 -= 1
+                return out(401, expired)
+            if not auth:
+                return out(401, {'code': 401, 'error_code': 'no_authorization', 'msg': 'This endpoint requires a Bearer token'})
+            info = self.access.get(auth.replace('Bearer ', ''))
+            if not info or info[1] < time.time():
+                return out(401, expired)
+            uid = info[0]
+            em = self.by_id[uid]
+            pw = body.get('password') if isinstance(body, dict) else None
+            if self.reauth:
+                return out(400, {'code': 400, 'error_code': 'reauthentication_needed', 'msg': 'Password update requires reauthentication'})
+            if not isinstance(pw, str) or len(pw) < self.min_pw:
+                return out(422, {'code': 422, 'error_code': 'weak_password', 'msg': f'Password should be at least {self.min_pw} characters.', 'weak_password': {'reasons': ['length']}})
+            if pw == self.users[em]['pw']:
+                return out(422, {'code': 422, 'error_code': 'same_password', 'msg': 'New password should be different from the old password.'})
+            self.users[em]['pw'] = pw
+            self.pw_changes.append(em)
+            return out(200, {'id': uid, 'email': em, 'user_metadata': self.users[em]['meta'], 'updated_at': '2026-11-20T12:00:00Z'})
         if path == '/auth/v1/logout':
             tok = (auth or '').replace('Bearer ', '')
             info = self.access.pop(tok, None)
