@@ -404,6 +404,73 @@ try:
     check('S14 local delete still asks about this device and removes the account', DIALOGS and 'on this device' in DIALOGS[0] and 'lee@example.com' not in lst(pg, 'bl.users'), (DIALOGS, lst(pg, 'bl.users')))
     ctx.close()
 
+    # ---------- S15: the Sign up button in the top bar (guests only) ----------
+    HDR = """(()=>{const kids=[...document.querySelectorAll('.hd .in > *')].filter(e=>e.getBoundingClientRect().width>0).map(e=>{const b=e.getBoundingClientRect();return{c:e.id||e.className||e.tagName,l:b.left,r:b.right,t:b.top,b:b.bottom}});
+      const ov=[];for(let i=0;i<kids.length;i++)for(let j=i+1;j<kids.length;j++){const a=kids[i],c=kids[j];if(a.l<c.r-1&&c.l<a.r-1&&a.t<c.b-1&&c.t<a.b-1)ov.push(a.c+' x '+c.c)}
+      return{kids,ov,sw:document.documentElement.scrollWidth,iw:innerWidth,hh:document.querySelector('.hd').getBoundingClientRect().height}})()"""
+    fake = Fake()
+    for label, vp in (('desktop', D), ('phone', P), ('narrow', {'width': 320, 'height': 700}), ('tablet', {'width': 800, 'height': 900})):
+        ctx, pg, errs = newpage(b, vp, fake, dict(APP, tab='Explore'))
+        btn = pg.locator('#hacct')
+        check(f'S15 {label}: a guest sees a Sign up button in the top bar', btn.is_visible() and btn.inner_text() == 'Sign up' and btn.evaluate("e=>e.tagName") == 'BUTTON', btn.inner_text())
+        g = pg.evaluate(HDR)
+        hb = {k['c']: k for k in g['kids']}
+        gear = hb.get('gb'); ha = hb.get('hacct')
+        check(f'S15 {label}: it sits right next to the Settings (theme) button', ha and gear and 0 <= gear['l'] - ha['r'] <= 20 and abs((ha['t'] + ha['b']) / 2 - (gear['t'] + gear['b']) / 2) < 3, (ha, gear))
+        check(f'S15 {label}: nothing in the top bar overlaps and the page does not scroll sideways', g['ov'] == [] and g['sw'] <= g['iw'], (g['ov'], g['sw'], g['iw']))
+        hh_guest = g['hh']
+        ctx.close()
+        fake2 = Fake()
+        ctx, pg, errs, uid, sess = logged_in_page(b, vp, fake2, f'hdr-{label}@example.com', state=dict(APP, tab='Explore'))
+        w(pg, 500)
+        g2 = pg.evaluate(HDR)
+        check(f'S15 {label}: a signed-in person does not see it', not pg.locator('#hacct').is_visible() and pg.evaluate("document.getElementById('hacct').hidden") is True)
+        check(f'S15 {label}: the top bar is the same height with or without the button', abs(g2['hh'] - hh_guest) < 1.5 and g2['ov'] == [], (g2['hh'], hh_guest, g2['ov']))
+        ctx.close()
+
+    fake = Fake()
+    ctx, pg, errs = newpage(b, P, fake, dict(APP, tab='Explore'))
+    pg.click('#hacct'); w(pg)
+    check('S15 clicking it opens the Create your account form', pg.evaluate("S.stage") == 'signup' and pg.locator('h1').inner_text() == 'Create your account' and pg.locator('form#af').count() == 1)
+    check('S15 the form also offers Log in for people who already have an account', pg.locator('#full [data-act="login"]').count() == 1)
+    check('S15 the top bar is hidden while the form is open', not pg.locator('#hacct').is_visible())
+    pg.click('#full [data-act="back2"]'); w(pg, 700)
+    check('S15 Back from the form returns to the same tab', pg.evaluate("S.stage") == 'app' and pg.evaluate("S.tab") == 'Explore' and pg.locator('#hacct').is_visible(), (pg.evaluate("S.stage"), pg.evaluate("S.tab")))
+    pg.click('#hacct'); w(pg)
+    pg.go_back(); w(pg, 600)
+    check('S15 the browser Back button also returns from the form', pg.evaluate("S.stage") == 'app' and pg.evaluate("S.tab") == 'Explore', (pg.evaluate("S.stage"), pg.evaluate("S.tab")))
+    pg.focus('#hacct'); pg.keyboard.press('Enter'); w(pg)
+    check('S15 the button works from the keyboard (Tab, then Enter)', pg.evaluate("S.stage") == 'signup')
+    pg.fill('#a_name', 'Hedy Lamarr'); pg.fill('#a_email', 'hedy@example.com'); pg.fill('#a_pw', PW)
+    pg.click('[data-act="dosignup"]'); pg.wait_for_function("S.stage==='app'&&S.me", timeout=8000); w(pg, 600)
+    check('S15 after signing up the button is gone from the top bar', not pg.locator('#hacct').is_visible() and pg.evaluate("S.me") == 'hedy@example.com')
+    tab(pg, 'Settings'); pg.click('[data-act="logout"]'); w(pg, 800)
+    check('S15 after logging out the button is back', pg.locator('#hacct').is_visible())
+    ctx.close()
+
+    # a guest who just did the quiz can sign up from the top bar and keeps the answers
+    fake = Fake()
+    ctx, pg, errs = newpage(b, D, fake, APP0)
+    pg.evaluate("act('quiz')"); w(pg)
+    for i in range(4):
+        pg.evaluate(FILL); pg.click('[data-act="next"]'); w(pg, 150)
+    pg.wait_for_function("S.stage==='app'", timeout=9000); w(pg, 500)
+    check('S15 a guest who finished the quiz sees the Sign up button', pg.locator('#hacct').is_visible() and len(fake.log) == 0, len(fake.log))
+    pg.click('#hacct'); w(pg)
+    pg.fill('#a_name', 'Quiz Guest'); pg.fill('#a_email', 'qg@example.com'); pg.fill('#a_pw', PW)
+    pg.click('[data-act="dosignup"]'); pg.wait_for_function("S.stage==='app'&&S.me", timeout=8000); w(pg, 1500)
+    q = (fake.profiles.get(fake.users['qg@example.com']['id']) or {}).get('quiz_answers') or {}
+    check('S15 the quiz answers made as a guest go into the new account', q.get('learn') == 'I like robotics, biology and helping people', q)
+    ctx.close()
+
+    # with no Supabase address the button still works (device-only accounts)
+    fake = Fake()
+    ctx, pg, errs = newpage(b, D, fake, APP0, local=True)
+    check('S15 local mode: guests see the button too', pg.locator('#hacct').is_visible())
+    pg.click('#hacct'); w(pg)
+    check('S15 local mode: it opens the same form with the prototype note', pg.evaluate("S.stage") == 'signup' and 'Prototype: accounts' in pg.locator('.box').inner_text())
+    ctx.close()
+
     # ---------- S16: how it looks ----------
     fake = Fake(); fake.add_user('look@example.com', PW, {'name': 'Look Lee', 'role': 'Student', 'provider': False, 'org': ''})
     for label, vp, scheme, dsf in [('desktop-light', D, 'light', 1), ('desktop-dark', D, 'dark', 1), ('phone-light', P, 'light', 2), ('phone-dark', P, 'dark', 2)]:
