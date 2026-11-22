@@ -1,4 +1,4 @@
-import json, os, re, subprocess, sys, time
+import datetime, json, os, re, subprocess, sys, time
 from subprocess import DEVNULL
 from playwright.sync_api import sync_playwright
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -56,13 +56,14 @@ def sbs(pg):
     s = pg.evaluate("localStorage.getItem('bl.sb')"); return json.loads(s) if s else None
 def lst(pg, k):
     return pg.evaluate("(k)=>JSON.parse(localStorage.getItem(k)||'null')", k)
-def logged_in_page(b, vp, fake, email, state=None, ttl=None, saved=None, known=None, **kw):
+def logged_in_page(b, vp, fake, email, state=None, ttl=None, saved=None, known=None, adm=None, **kw):
     if email not in fake.users:
         fake.add_user(email, PW, {'name': email.split('@')[0].title(), 'role': 'Student', 'provider': False, 'org': ''})
     uid = fake.users[email]['id']
     sess = fake.session(uid, ttl)
     seed = fake.sb_seed(sess)
     if known: seed['known'] = known
+    if adm is not None: seed['adm'] = adm   # what an earlier visit remembered about this person being an admin
     st = dict(state if state is not None else APP0, me=email)
     if saved: st['saved'] = saved
     u = {email: {'name': fake.profiles[uid]['name'], 'email': email, 'role': 'Student', 'provider': False, 'org': '', 'friends': [], 'sb': 1}}
@@ -99,7 +100,7 @@ try:
     pg.select_option('#a_role', 'Teacher'); pg.check('input[name="a_prov"][value="yes"]'); pg.fill('#a_org', 'Robotics Club')
     # double click must send one sign-up only, and the button shows it is working
     pg.evaluate("()=>{window.__p=act('dosignup');act('dosignup')}")
-    lab = pg.locator('[data-act="dosignup"]').inner_text() if pg.locator('[data-act="dosignup"]').count() else '(gone)'
+    lab = pg.evaluate("(()=>{const e=document.querySelector('[data-act=dosignup]');return e?e.innerText:'(gone)'})()")
     pg.wait_for_function("S.stage==='app'&&S.me", timeout=8000); w(pg, 600)
     check('S2 button said "Please wait…" while working', lab == 'Please wait…', lab)
     check('S2 only one sign-up request for a double click', len(fake.calls('POST', '/auth/v1/signup')) == 1, len(fake.calls('POST', '/auth/v1/signup')))
@@ -351,7 +352,7 @@ try:
         pg.reload(); w(pg, 1000)
         tab(pg, 'Settings'); DIALOGS.clear(); ACCEPT[0] = False
         pg.click('[data-act="del"]'); w(pg, 500)
-        nreq = len(fake.calls(None, '/rpc/'))
+        nreq = len(fake.calls(None, '/rpc/delete_my_account')) + len(fake.calls('DELETE'))
         check(f'S12 rpc={rpc} cancelling the question deletes nothing', pg.evaluate("S.me") == 'del@example.com' and nreq == 0 and 'del@example.com' in fake.users and 'delete your account' in DIALOGS[0].lower(), (DIALOGS, nreq))
         ACCEPT[0] = True
         pg.click('[data-act="del"]'); pg.wait_for_function("S.me===null", timeout=8000); w(pg, 600)
@@ -619,6 +620,499 @@ try:
     shown = pg.locator('.err').first.inner_text() if pg.locator('.err').count() else ''
     check('S17 and no confusing network message is shown on that screen', shown == '' and 'reach the server' not in pg.locator('body').inner_text(), shown)
     ctx.close()
+
+    # ---------- S18: the school waitlist (a form that anyone can use, signed in or not) ----------
+    def to_slide3(pg):
+        pg.click('[data-act="snext"]'); w(pg, 200); pg.click('[data-act="snext"]'); w(pg, 300)
+    JW = lambda f: f.calls('POST', '/rpc/join_waitlist')
+    # one read in the page each, so a screen that changes between two steps cannot make them wait for something that is gone
+    H1 = lambda pg: pg.evaluate("(()=>{const e=document.querySelector('h1');return e?e.innerText:''})()")
+    ERR = lambda pg: pg.evaluate("(()=>{const e=document.querySelector('#full .err');return e?e.innerText:''})()")
+    BTN = lambda pg: pg.evaluate("(()=>{const e=document.querySelector('[data-act=dowl]');return e?e.innerText:'(gone)'})()")
+    WLDONE = "!!document.querySelector('h1')&&document.querySelector('h1').textContent==='You’re on the list.'"
+    SW = "({sw:document.documentElement.scrollWidth,iw:innerWidth})"
+    STG = "[S.stage,S.slide]"
+    EM = 'principal@lincolnhigh.edu'
+    def wl_fill(pg, org, email, note=''):
+        pg.fill('#w_org', org); pg.fill('#w_email', email); pg.fill('#w_note', note)
+    def wl_fresh(pg):
+        """From the Get started screen, or the thank-you screen, get to an empty form."""
+        if pg.evaluate("S.stage") == 'waitlist' and pg.locator('#w_org').count() == 0:
+            pg.click('#full button[data-act="wlback"]'); w(pg, 700)
+        if pg.evaluate("S.stage") != 'waitlist':
+            pg.click('.plan [data-act="waitlist"]'); w(pg)
+
+    fake = Fake(); fake.sql = True
+    ctx, pg, errs = newpage(b, D, fake, None, visit=False)
+    to_slide3(pg)
+    check('S18 we are on the Get started screen', pg.evaluate(STG) == ['intro', 2], pg.evaluate(STG))
+    check('S18 it offers "Join the waitlist" inside the Schools and organizations row, next to COMING SOON',
+          pg.evaluate("(()=>{const bs=document.querySelectorAll('.plan [data-act=waitlist]');if(bs.length!==1)return false;const row=bs[0].closest('.plan > div');return row.innerText.includes('Schools and organizations')&&row.innerText.includes('COMING SOON')&&!row.innerText.includes('FREE')})()"))
+    check('S18 the link text is "Join the waitlist"', pg.locator('.plan [data-act="waitlist"]').inner_text().startswith('Join the waitlist'), pg.locator('.plan [data-act="waitlist"]').inner_text())
+    check('S18 a guest looking at that screen has made no request', len(fake.log) == 0, fake.log)
+    pg.click('.plan [data-act="waitlist"]'); w(pg)
+    check('S18 it opens the Join the school waitlist form', pg.evaluate("S.stage") == 'waitlist' and H1(pg) == 'Join the school waitlist' and pg.locator('form#af').count() == 1, (pg.evaluate("S.stage"), H1(pg)))
+    check('S18 opening the form makes no request', len(fake.log) == 0, len(fake.log))
+    check('S18 the top bar is hidden while the form is open', pg.evaluate("document.body.classList.contains('full')") and not pg.locator('#hacct').is_visible())
+    lab = pg.evaluate("['w_org','w_email','w_note'].map(id=>{const l=document.querySelector('label[for='+id+']');return l?l.textContent.trim():null})")
+    check('S18 each box has its own label, and the note says it is optional', lab[0] == 'School or organization' and lab[1] == 'Your email' and (lab[2] or '').startswith('Anything you want us to know?') and '(optional)' in (lab[2] or ''), lab)
+    check('S18 browsers can autofill the organization and the email', pg.get_attribute('#w_org', 'autocomplete') == 'organization' and pg.get_attribute('#w_email', 'autocomplete') == 'email' and pg.get_attribute('#w_email', 'type') == 'email')
+    check('S18 the boxes have the same length limits as the database (120, 254, 500)', [pg.get_attribute(i, 'maxlength') for i in ('#w_org', '#w_email', '#w_note')] == ['120', '254', '500'])
+    check('S18 the form says why the answers are saved', 'We save your answers so we can reach you about' in pg.locator('.box .meta').inner_text(), pg.locator('.box .meta').inner_text())
+    hp = pg.evaluate("(()=>{const e=document.getElementById('w_hp'),r=e.getBoundingClientRect();return{ti:e.tabIndex,ah:e.closest('.hp').getAttribute('aria-hidden'),r:r.right,v:e.value}})()")
+    check('S18 a trap box for robots is off screen, skipped by Tab, hidden from screen readers and empty', hp['ti'] == -1 and hp['r'] < 0 and hp['ah'] == 'true' and hp['v'] == '', hp)
+    pg.focus('#w_note'); pg.keyboard.press('Tab')
+    check('S18 Tab goes from the note straight to the Join button and never into the trap box', pg.evaluate("document.activeElement.getAttribute('data-act')") == 'dowl', pg.evaluate("document.activeElement.id||document.activeElement.tagName"))
+
+    # mistakes are stopped here, in plain words, and what was typed stays
+    pg.click('[data-act="dowl"]'); w(pg, 200)
+    check('S18 an empty form is stopped with a plain message', ERR(pg) == 'Enter the name of your school or organization.', ERR(pg))
+    pg.fill('#w_org', 'L'); pg.click('[data-act="dowl"]'); w(pg, 150)
+    check('S18 a one-letter name is stopped too', ERR(pg) == 'Enter the name of your school or organization.', ERR(pg))
+    pg.fill('#w_org', 'Lincoln High'); pg.fill('#w_email', 'principal-at-school'); pg.click('[data-act="dowl"]'); w(pg, 150)
+    check('S18 an email with no @ is stopped', ERR(pg) == 'Enter a valid email address.', ERR(pg))
+    pg.fill('#w_email', 'two words@school.org'); pg.click('[data-act="dowl"]'); w(pg, 150)
+    check('S18 an email with a space in it is stopped', ERR(pg) == 'Enter a valid email address.', ERR(pg))
+    check('S18 what was typed is still there after the mistakes', pg.input_value('#w_org') == 'Lincoln High' and pg.input_value('#w_email') == 'two words@school.org')
+    check('S18 none of the mistakes made a request', len(fake.log) == 0, len(fake.log))
+
+    # a good entry: tidied, sent once, with the publishable key only
+    wl_fill(pg, '  Lincoln High  ', '  Principal@LincolnHigh.EDU ', '  We run 40 clubs  ')
+    pg.evaluate("()=>{window.__p=act('dowl');act('dowl')}")
+    lab = BTN(pg)
+    pg.wait_for_function(WLDONE, timeout=8000); w(pg, 300)
+    check('S18 the button said "Please wait…" while working', lab == 'Please wait…', lab)
+    check('S18 a double click sends only one request', len(JW(fake)) == 1, len(JW(fake)))
+    c = JW(fake)[0]
+    check('S18 the request has the publishable key only: no Authorization header', c['auth'] is None, c['auth'])
+    check('S18 it sends three named values, tidied (trimmed, email in lower case)', c['body'] == {'p_org': 'Lincoln High', 'p_email': EM, 'p_note': 'We run 40 clubs'}, c['body'])
+    check('S18 the fake service saw no rule broken', fake.violations == [], fake.violations)
+    check('S18 one row was added with those values', len(fake.waitlist) == 1 and (fake.waitlist[0]['org'], fake.waitlist[0]['email'], fake.waitlist[0]['note']) == ('Lincoln High', EM, 'We run 40 clubs'), fake.waitlist)
+    check('S18 the thank-you screen says "You’re on the list." and shows the email', H1(pg) == 'You’re on the list.' and EM in pg.locator('.box b').inner_text(), pg.locator('.box').inner_text())
+    check('S18 the form is gone from that screen', pg.locator('#w_org').count() == 0 and pg.locator('[data-act="dowl"]').count() == 0)
+    d = store(pg)
+    check('S18 nothing about the entry and no login is kept in the browser', 'bl.sb' not in d and all(EM not in v and 'Lincoln High' not in v for v in d.values()), [k for k, v in d.items() if EM in v or 'Lincoln High' in v])
+    hl = pg.evaluate("history.length")
+    pg.click('#full [data-act="wlback"]'); w(pg, 800)
+    check('S18 Done goes back to the Get started screen using the browser history (no new history entry)', pg.evaluate(STG) == ['intro', 2] and pg.evaluate("history.length") == hl, (pg.evaluate(STG), hl, pg.evaluate("history.length")))
+    pg.click('.plan [data-act="waitlist"]'); w(pg)
+    check('S18 opening it again gives an empty form, not the old thank-you screen', pg.locator('#w_org').count() == 1 and pg.input_value('#w_org') == '' and pg.input_value('#w_email') == '' and pg.input_value('#w_note') == '')
+
+    # the same email twice looks the same and writes nothing new
+    wl_fill(pg, 'Different Name', 'PRINCIPAL@lincolnhigh.edu')
+    pg.click('[data-act="dowl"]'); pg.wait_for_function(WLDONE, timeout=8000)
+    check('S18 using the same email again shows the same thank-you screen', H1(pg) == 'You’re on the list.' and len(JW(fake)) == 2, len(JW(fake)))
+    check('S18 and writes nothing new, so the form cannot be used to find out who is on the list', len(fake.waitlist) == 1 and fake.waitlist[0]['org'] == 'Lincoln High', fake.waitlist)
+
+    # a robot that fills the hidden box is thanked and ignored
+    wl_fresh(pg)
+    wl_fill(pg, 'Bot School', 'bot@spam.example'); pg.evaluate("document.getElementById('w_hp').value='http://spam.example'")
+    n0 = len(JW(fake)); pg.click('[data-act="dowl"]'); w(pg, 600)
+    check('S18 a robot that fills the hidden trap box sees the normal thank-you screen', H1(pg) == 'You’re on the list.')
+    check('S18 but nothing is sent or saved for it', len(JW(fake)) == n0 and len(fake.waitlist) == 1, (len(JW(fake)) - n0, len(fake.waitlist)))
+
+    # the Enter key sends the form
+    wl_fresh(pg)
+    wl_fill(pg, 'Enter School', 'enter@school.edu'); pg.press('#w_email', 'Enter'); pg.wait_for_function(WLDONE, timeout=8000)
+    check('S18 pressing Enter in a box sends the form', any(isinstance(x['body'], dict) and x['body'].get('p_email') == 'enter@school.edu' for x in JW(fake)))
+
+    # when something goes wrong: a plain message, the typed text stays, the button works again
+    def fail_case(name, setup, undo, msg):
+        wl_fresh(pg)
+        wl_fill(pg, 'Err School', 'err@school.edu', 'my note')
+        setup(); n1 = len(fake.waitlist)
+        pg.click('[data-act="dowl"]'); w(pg, 900)
+        undo()
+        check(f'S18 {name}: the plain message is shown', ERR(pg) == msg, ERR(pg))
+        check(f'S18 {name}: the typed text is kept and the button works again', pg.input_value('#w_org') == 'Err School' and pg.input_value('#w_email') == 'err@school.edu' and pg.input_value('#w_note') == 'my note' and BTN(pg) == 'Join the waitlist' and pg.locator('[data-act="dowl"]').is_enabled(), (pg.input_value('#w_org'), BTN(pg)))
+        check(f'S18 {name}: nothing was saved', len(fake.waitlist) == n1 and not any(x['email'] == 'err@school.edu' for x in fake.waitlist))
+    def setattr_(k, v): return lambda: setattr(fake, k, v)
+    fail_case('no internet', setattr_('fail', 'net'), setattr_('fail', None), 'Can’t reach the server. Check your internet and try again.')
+    fail_case('too many tries', setattr_('fail', '429'), setattr_('fail', None), 'Too many tries right now. Wait a minute and try again.')
+    fail_case('the SQL has not been run yet', setattr_('sql', False), setattr_('sql', True), 'The waitlist isn’t open yet. Please try again soon.')
+    fail_case('the database is busy', setattr_('wl_busy', True), setattr_('wl_busy', False), 'The waitlist is busy right now. Please try again in a few minutes.')
+    pg.evaluate("document.getElementById('w_note').value='x'.repeat(501)")
+    pg.click('[data-act="dowl"]'); w(pg, 700)
+    check('S18 a note that is too long (pasted past the limit) gets the database message and nothing is saved', ERR(pg) == 'That note is too long. Keep it under 500 characters.' and not any(x['email'] == 'err@school.edu' for x in fake.waitlist), ERR(pg))
+    pg.fill('#w_note', 'short again'); pg.click('[data-act="dowl"]'); pg.wait_for_function(WLDONE, timeout=8000)
+    check('S18 after all those errors the same form can still be sent', any(x['email'] == 'err@school.edu' and x['note'] == 'short again' for x in fake.waitlist), fake.waitlist)
+    check('S18 the fake service saw no rule broken in all of that', fake.violations == [], fake.violations)
+
+    # typed text survives a redraw of the page (quotes and HTML included)
+    pg.click('#full [data-act="wlback"]'); w(pg, 800); pg.click('.plan [data-act="waitlist"]'); w(pg)
+    tricky = 'Tom\'s "Best" <b>School</b> & Co'
+    wl_fill(pg, tricky, 'a"b@x.org', 'line <i>one</i>\nline two')
+    pg.evaluate("render()"); w(pg, 200)
+    check('S18 a redraw of the page keeps what was typed, even quotes and HTML, as plain text', pg.input_value('#w_org') == tricky and pg.input_value('#w_email') == 'a"b@x.org' and pg.input_value('#w_note') == 'line <i>one</i>\nline two' and pg.locator('#full b').count() == 0, (pg.input_value('#w_org'), pg.input_value('#w_note')))
+
+    # Back, the browser Back button, a reload and the no-history fallback
+    n0 = len(fake.log)
+    pg.click('#full [data-act="wlback"]'); w(pg, 800)
+    check('S18 the Back link returns to the Get started screen without sending anything', pg.evaluate(STG) == ['intro', 2] and len(fake.log) == n0, (pg.evaluate(STG), len(fake.log) - n0))
+    pg.click('.plan [data-act="waitlist"]'); w(pg)
+    pg.go_back(); w(pg, 700)
+    check('S18 the browser Back button also returns to the Get started screen', pg.evaluate(STG) == ['intro', 2], pg.evaluate(STG))
+    pg.click('.plan [data-act="waitlist"]'); w(pg)
+    pg.reload(); w(pg, 900)
+    check('S18 reloading on the form shows the empty form again', pg.evaluate("S.stage") == 'waitlist' and pg.locator('#w_org').count() == 1 and pg.input_value('#w_org') == '')
+    pg.click('#full [data-act="wlback"]'); w(pg, 800)
+    check('S18 and Back from there still leads to the Get started screen', pg.evaluate(STG) == ['intro', 2], pg.evaluate(STG))
+    pg.click('.plan [data-act="waitlist"]'); w(pg)
+    pg.evaluate("hDepth=0"); pg.click('#full [data-act="wlback"]'); w(pg, 800)
+    check('S18 with no earlier page in the history, Back still returns to the Get started screen', pg.evaluate(STG) == ['intro', 2], pg.evaluate(STG))
+    check('S18 no page errors on any of this', errs == [], errs[:3])
+    ctx.close()
+
+    # HTML in an email is shown as text on the thank-you screen
+    fake = Fake(); fake.sql = True
+    ctx, pg, errs = newpage(b, D, fake, None, visit=False)
+    to_slide3(pg); pg.click('.plan [data-act="waitlist"]'); w(pg)
+    wl_fill(pg, 'Markup School', '<i>x</i>@example.com'); pg.click('[data-act="dowl"]'); pg.wait_for_function(WLDONE, timeout=8000)
+    check('S18 an email with HTML in it is shown as text on the thank-you screen, not run', pg.locator('.box b i').count() == 0 and '<i>x</i>@example.com' in pg.locator('.box b').inner_text(), pg.locator('.box b').inner_html())
+    ctx.close()
+
+    # Settings has the same form, for guests and for signed-in people
+    fake = Fake(); fake.sql = True
+    ctx, pg, errs = newpage(b, D, fake, dict(APP, tab='Settings'))
+    check('S18 a guest finds "School waitlist" in Settings, under More', pg.locator('#main [data-act="waitlist"]').count() == 1 and pg.locator('#main [data-act="waitlist"]').inner_text() == 'School waitlist')
+    pg.click('#main [data-act="waitlist"]'); w(pg)
+    check('S18 it opens the same form', pg.evaluate("S.stage") == 'waitlist' and H1(pg) == 'Join the school waitlist')
+    pg.click('#full [data-act="wlback"]'); w(pg, 800)
+    check('S18 Back from there returns to Settings', pg.evaluate("[S.stage,S.tab]") == ['app', 'Settings'] and pg.locator('#main h1').inner_text() == 'Settings', pg.evaluate("[S.stage,S.tab]"))
+    ctx.close()
+
+    fake = Fake(); fake.sql = True
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'wl@example.com', state=dict(APP, tab='Settings'))
+    w(pg, 700)
+    pg.click('#main [data-act="waitlist"]'); w(pg)
+    wl_fill(pg, 'Signed In School', 'signedin@school.edu'); pg.click('[data-act="dowl"]'); pg.wait_for_function(WLDONE, timeout=8000)
+    c = JW(fake)[0]
+    check('S18 a signed-in person sends it the same way: publishable key only, no login token', c['auth'] is None and fake.violations == [], (c['auth'], fake.violations))
+    check('S18 their entry is saved with what they typed', fake.waitlist and fake.waitlist[0]['email'] == 'signedin@school.edu', fake.waitlist)
+    pg.click('#full [data-act="wlback"]'); w(pg, 800)
+    check('S18 Done returns them to Settings and they are still logged in', pg.evaluate("[S.stage,S.tab]") == ['app', 'Settings'] and pg.evaluate("S.me") == 'wl@example.com' and sbs(pg)['uid'] == uid, (pg.evaluate("[S.stage,S.tab]"), pg.evaluate("S.me")))
+    ctx.close()
+
+    # device-only mode (no Supabase address): there is nowhere to send it, so there is no waitlist
+    fake = Fake(); fake.sql = True
+    ctx, pg, errs = newpage(b, D, fake, None, visit=False, local=True)
+    to_slide3(pg)
+    check('S18 device-only mode: no waitlist link on the Get started screen, and COMING SOON is still there', pg.locator('[data-act="waitlist"]').count() == 0 and 'COMING SOON' in pg.locator('.plan').inner_text())
+    pg.evaluate("act('waitlist')"); w(pg)
+    check('S18 device-only mode: calling it directly does nothing', pg.evaluate("S.stage") == 'intro')
+    ctx.close()
+    ctx, pg, errs = newpage(b, D, fake, dict(APP, tab='Settings'), local=True)
+    check('S18 device-only mode: Settings has no School waitlist button', pg.locator('[data-act="waitlist"]').count() == 0)
+    ctx.close()
+    ctx, pg, errs = newpage(b, D, fake, dict(APP, stage='waitlist'), local=True)
+    check('S18 device-only mode: a waitlist screen left over from an online visit becomes the app, not a blank page', pg.evaluate("S.stage") == 'app' and pg.locator('#main h1').count() == 1 and pg.locator('#full').inner_text().strip() == '', (pg.evaluate("S.stage"), pg.locator('#full').inner_text()[:60]))
+    ctx.close()
+    ctx, pg, errs = newpage(b, D, fake, dict(APP, stage='waitlist', seen=False), local=True)
+    check('S18 device-only mode: and a new visitor in that state sees the welcome screens', pg.evaluate("S.stage") == 'intro', pg.evaluate("S.stage"))
+    ctx.close()
+
+    # it fits on small screens in every state (form, mistake, thank-you), with long text
+    LONGEM = 'a' * 60 + '@' + 'b' * 40 + '.example.org'
+    for label, vp in (('desktop', D), ('phone', P), ('narrow', {'width': 320, 'height': 600})):
+        fake = Fake(); fake.sql = True
+        ctx, pg, errs = newpage(b, vp, fake, dict(APP, tab='Settings'))
+        pg.click('#main [data-act="waitlist"]'); w(pg)
+        g1 = pg.evaluate(SW)
+        wl_fill(pg, 'x' * 100, 'nope', 'y' * 300); pg.click('[data-act="dowl"]'); w(pg, 200)
+        g2 = pg.evaluate(SW)
+        pg.fill('#w_email', LONGEM); pg.click('[data-act="dowl"]'); pg.wait_for_function(WLDONE, timeout=8000); w(pg, 200)
+        g3 = pg.evaluate(SW)
+        check(f'S18 {label}: no sideways scrolling on the form, with a mistake, or on the thank-you screen with a very long email', max(g1['sw'], g2['sw'], g3['sw']) <= g1['iw'], (g1, g2, g3))
+        ctx.close()
+
+    # ---------- S19: the Admin page (only for accounts on the database's admin list) ----------
+    BOSS = 'boss@example.com'
+    DAYS = [0, 0, 1, 0, 2, 0, 0, 0, 3, 0, 0, 5, 1, 2]
+    def daily(ns):
+        t = datetime.date.today()
+        return [{'day': (t - datetime.timedelta(days=13 - i)).isoformat(), 'n': n} for i, n in enumerate(ns)]
+    def admin_world(email=BOSS):
+        """A pretend project with one admin, four students with quiz answers, some saved items and four waitlist entries."""
+        f = Fake(); f.sql = True
+        f.add_user(email, PW, {'name': 'Boss Person', 'role': 'Teacher', 'provider': False, 'org': ''}); f.make_admin(email)
+        ids = []
+        for i, (g, s) in enumerate([('9th grade', 'The Village School'), ('10th grade', 'The Village School'), ('10th grade', 'Another School'), ('11th grade', 'The Village School')]):
+            u = f.add_user(f'stu{i}@example.com', PW, {'name': f'Stu {i}', 'role': 'Student', 'provider': False, 'org': ''})
+            f.profiles[u]['quiz_answers'] = {'grade': g, 'school': s, 'learn': 'PRIVATE ANSWER %d' % i}
+            ids.append(u)
+        f.activity = [{'user_id': ids[k], 'opp_id': o, 'kind': 'saved'} for k, o in [(0, 'school-001'), (1, 'school-001'), (2, 'school-001'), (0, 'community-001'), (1, 'community-001'), (3, 'explore-001'), (0, 'gone-123'), (1, 'gone-123')]]
+        f.activity.append({'user_id': ids[2], 'opp_id': 'explore-002', 'kind': 'doing'})
+        f.ov_extra = {'accounts': 41, 'accounts_7d': 7, 'quiz_done': 23, 'saved': 118, 'doing': 64, 'daily': daily(DAYS)}
+        f.add_waitlist('Lincoln High', 'principal@lincoln.edu', 'We run 40 clubs', minutes_ago=300)
+        f.add_waitlist('<i>Evil</i> Academy', 'x@evil.test', '<img src=x onerror="window.__xss=1;alert(1)">', minutes_ago=120)
+        f.add_waitlist('=cmd|" /C calc"!A1', 'formula@test.org', 'line one\nline\ttwo', minutes_ago=60)
+        f.add_waitlist('Maple Middle', 'office@maple.org', None, minutes_ago=5)
+        return f
+    def wait_ok(pg, js, ms=8000):
+        """True if the page gets to the state in time. A plain failed check is easier to read than a time-out stack trace."""
+        try:
+            pg.wait_for_function(js, timeout=ms); return True
+        except Exception:
+            return False
+    H1 = lambda pg: pg.evaluate("(()=>{const e=document.querySelector('h1');return e?e.innerText:''})()")
+    OVQ = lambda f: f.calls('POST', '/rpc/admin_overview')
+    ISQ = lambda f: f.calls('POST', '/rpc/is_admin')
+    ADMOK = "!!document.querySelector('#main .ad-stats')"
+    ADMBTN = "(()=>{const e=document.getElementById('hadm');return{vis:!e.hidden&&e.getBoundingClientRect().width>0,on:e.classList.contains('on'),txt:e.textContent}})()"
+    BODY = lambda pg: pg.locator('body').inner_text()
+    def adm_page(vp, f, adm=True, state=None, **kw):
+        ctx, pg, errs, uid, sess = logged_in_page(b, vp, f, BOSS, state=state if state is not None else dict(APP, tab='Admin'), adm=adm, **kw)
+        return ctx, pg, errs, uid
+
+    # a signed-in student (the SQL is installed) never sees Admin
+    fake = Fake(); fake.sql = True
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'plain@example.com', state=dict(APP, tab='Settings'))
+    w(pg, 800)
+    ia = ISQ(fake)
+    check('S19 a signed-in student: the page asks the database once whether they are an admin, with their own token', len(ia) == 1 and (ia[0]['auth'] or '').startswith('Bearer at-') and KEY not in (ia[0]['auth'] or '') and ia[0]['body'] == {}, [(c['auth'], c['body']) for c in ia])
+    a = pg.evaluate(ADMBTN)
+    check('S19 ...the answer is no, so there is no Admin button', a['vis'] is False and pg.evaluate("document.getElementById('hadm').hidden") is True, a)
+    pg.evaluate("go('Admin')"); w(pg, 400)
+    check('S19 even asking for the Admin page directly ends on the School tab and asks for no admin data', pg.evaluate("S.tab") == 'School' and pg.locator('#main h1').inner_text() != 'Admin' and not OVQ(fake), (pg.evaluate("S.tab"), len(OVQ(fake))))
+    check('S19 the answer is remembered as "not an admin" on this device', sbs(pg).get('adm') in (False, None), sbs(pg).get('adm'))
+    ctx.close()
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'stale@example.com', state=dict(APP, tab='Admin'), adm=True)
+    w(pg, 900)
+    check('S19 a student whose device still says "Admin" (left over, or edited by hand) is put back on School and sees no admin data', pg.evaluate("S.tab") == 'School' and not pg.locator('#main .ad-stats').count() and not pg.locator('#hadm').is_visible() and len(OVQ(fake)) <= 1 and pg.evaluate("ADM") is None, (pg.evaluate("S.tab"), len(OVQ(fake))))
+    check('S19 even if that request was made, the database said no (403) and nothing was kept', pg.evaluate("ADM") is None and sbs(pg).get('adm') is False, sbs(pg))
+    ctx.close()
+
+    # the SQL has not been run: no Admin button, no errors, no repeated asking
+    fake = Fake()
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'nosql@example.com', state=dict(APP, tab='Settings'))
+    w(pg, 800)
+    pg.evaluate("sbSync()"); w(pg, 300); pg.evaluate("sbSync()"); w(pg, 500)
+    check('S19 before the SQL is run there is no Admin button and the page works as before', not pg.locator('#hadm').is_visible() and pg.locator('#main h1').inner_text() == 'Settings')
+    check('S19 and the page stops asking after the first "no such function" answer', len(ISQ(fake)) == 1, len(ISQ(fake)))
+    check('S19 and shows no error', errs == [] and pg.locator('.err:visible, .inf:visible').count() == 0, errs[:3])
+    ctx.close()
+
+    # the SQL is run while the site is already open in a tab: logging out and in again is enough, no reload needed
+    fake = admin_world(); fake.sql = False
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, BOSS, state=dict(APP0, tab='Settings'))
+    w(pg, 900)
+    check('S19 before the SQL is run, even the admin has no Admin button', not pg.locator('#hadm').is_visible() and len(ISQ(fake)) == 1, len(ISQ(fake)))
+    fake.sql = True     # the owner runs admin.sql in another tab
+    pg.click('#main [data-act="logout"]'); w(pg, 900)
+    tab(pg, 'Settings'); pg.click('#main [data-act="login"]'); w(pg)
+    pg.fill('#a_email', BOSS); pg.fill('#a_pw', PW); pg.click('[data-act="dologin"]')
+    landed = wait_ok(pg, ADMOK)
+    check('S19 after the SQL is run, logging out and in again lands on the Admin page without reloading the site', landed and pg.evaluate("S.tab") == 'Admin' and pg.evaluate(ADMBTN)['vis'] is True, (landed, pg.evaluate("S.tab")))
+    ctx.close()
+
+    # logging in as the admin lands on the Admin page
+    fake = admin_world(); bossid = fake.users[BOSS]['id']
+    ctx, pg, errs = newpage(b, D, fake, APP0)   # a guest with no quiz answers, so nothing is uploaded into the admin's account on login
+    check('S19 a guest sees Sign up and no Admin button', pg.locator('#hacct').is_visible() and not pg.locator('#hadm').is_visible())
+    tab(pg, 'Settings'); pg.click('#main [data-act="login"]'); w(pg)
+    d0 = len(DIALOGS)
+    pg.fill('#a_email', BOSS); pg.fill('#a_pw', PW); pg.click('[data-act="dologin"]')
+    landed = wait_ok(pg, ADMOK); w(pg, 400)
+    check('S19 logging in as the admin lands on the Admin page', landed and pg.evaluate("[S.stage,S.tab]") == ['app', 'Admin'] and H1(pg) == 'Admin' and pg.locator('#main .eyebrow').inner_text() == 'ADMIN', (landed, pg.evaluate("[S.stage,S.tab]")))
+    check('S19 the page names the signed-in email', BOSS in pg.locator('#main > p').first.inner_text(), pg.locator('#main > p').first.inner_text())
+    a = pg.evaluate(ADMBTN)
+    check('S19 the top bar shows an Admin button marked as the current page, and no Sign up button', a['vis'] and a['on'] and a['txt'] == 'Admin' and not pg.locator('#hacct').is_visible(), a)
+    ia, ov = ISQ(fake), OVQ(fake)
+    check('S19 it took one admin check and one overview request, both with the signed-in token and empty bodies', len(ia) == 1 and len(ov) == 1 and all((c['auth'] or '').startswith('Bearer at-') and KEY not in c['auth'] and c['body'] == {} for c in ia + ov), [(c['path'], c['auth'], c['body']) for c in ia + ov])
+    check('S19 the fake service saw no rule broken', fake.violations == [], fake.violations)
+    tiles = pg.evaluate("[...document.querySelectorAll('#main .ad-s')].map(e=>[e.querySelector('.ad-l').textContent,e.querySelector('.ad-n').textContent])")
+    check('S19 six number tiles with the right labels and numbers', tiles == [['Accounts', '41'], ['New in 7 days', '7'], ['Finished the quiz', '23'], ['Saved items', '118'], ['“I’m doing” items', '64'], ['On the waitlist', '4']], tiles)
+    rows = pg.evaluate("[...document.querySelectorAll('#main .ad-w')].map(e=>({org:e.querySelector('b').textContent,when:e.children[1].textContent,email:e.querySelector('.em').textContent,note:e.querySelector('.ad-nt')?e.querySelector('.ad-nt').textContent:null}))")
+    check('S19 the waitlist is listed newest first with organization, email and note', [r['org'] for r in rows] == ['Maple Middle', '=cmd|" /C calc"!A1', '<i>Evil</i> Academy', 'Lincoln High'] and [r['email'] for r in rows] == ['office@maple.org', 'formula@test.org', 'x@evil.test', 'principal@lincoln.edu'], rows)
+    check('S19 a row with no note shows no note line, and notes show what was written', rows[0]['note'] is None and ' '.join(rows[1]['note'].split()) == 'line one line two' and rows[3]['note'] == 'We run 40 clubs', rows)
+    check('S19 every row has a readable date', all(re.match(r'^[A-Z][a-z]{2} \d{1,2}, \d{4}', r['when']) for r in rows), [r['when'] for r in rows])
+    check('S19 the heading counts the waitlist', pg.locator('#main .pnl h2').first.inner_text() == 'Waitlist (4)', pg.locator('#main .pnl h2').first.inner_text())
+    check('S19 text typed by visitors is shown as plain text: no HTML made, no script run', pg.locator('#main .ad-w img').count() == 0 and pg.locator('#main .ad-w i').count() == 0 and pg.evaluate("window.__xss") is None and len(DIALOGS) == d0, (pg.locator('#main .ad-w img').count(), DIALOGS[d0:]))
+    bars = pg.evaluate("[...document.querySelectorAll('#main .ad-bars i')].map(e=>[e.style.height,e.className])")
+    exp = [['3%', 'z'] if n == 0 else [f'{max(6, round(n / 5 * 100))}%', ''] for n in DAYS]
+    check('S19 the 14-day chart has 14 bars, tall in proportion, and empty days are marked', bars == exp, bars)
+    aria = pg.get_attribute('#main .ad-bars', 'aria-label') or ''
+    check('S19 the chart has a text version for screen readers with all 14 numbers', pg.get_attribute('#main .ad-bars', 'role') == 'img' and ', '.join(str(n) for n in DAYS) in aria and aria.startswith('New accounts per day'), aria)
+    n_s1, n_c1, n_e1 = [pg.evaluate("(id)=>ALL.find(x=>x.id===id).name", i) for i in ('school-001', 'community-001', 'explore-001')]
+    ms = pg.evaluate("[...document.querySelectorAll('#main .ad-two .pnl')[0].querySelectorAll('.ad-r')].map(e=>[e.children[0].textContent,e.children[1].textContent])")
+    check('S19 Most saved shows opportunity names with counts, most saved first, and an item the page no longer knows by its id', ms == [[n_s1, '3'], [n_c1, '2'], ['gone-123', '2'], [n_e1, '1']], ms)
+    sg = pg.evaluate("[...document.querySelectorAll('#main .ad-two .pnl')[1].querySelectorAll('h2, .ad-r')].map(e=>e.tagName==='H2'?e.textContent:e.children[0].textContent+'='+e.children[1].textContent)")
+    check('S19 Schools and Grades show names with counts', sg == ['Schools', 'The Village School=3', 'Another School=1', 'Grades', '10th grade=2', '11th grade=1', '9th grade=1'], sg)
+    check('S19 nobody’s quiz answers or other private text appear anywhere on the page', 'PRIVATE ANSWER' not in BODY(pg) and 'PRIVATE ANSWER' not in pg.content())
+    lnk = pg.evaluate("(()=>{const a=document.querySelector('#main a[href*=\"supabase.com\"]');return a?[a.href,a.target,a.rel]:null})()")
+    check('S19 the footer says these are counts only and links to the Supabase project in a new tab', 'These are counts only' in pg.locator('#main > p.meta').last.inner_text() and lnk == ['https://supabase.com/dashboard/project/urotelcllngtcctheelb', '_blank', 'noopener'], lnk)
+    check('S19 the page shows when it was updated', 'Updated ' in pg.locator('#main > p.meta').last.inner_text(), pg.locator('#main > p.meta').last.inner_text())
+    d = store(pg)
+    check('S19 the waitlist and the numbers are not kept in the browser storage', all('principal@lincoln.edu' not in v and 'PRIVATE ANSWER' not in v and 'Maple Middle' not in v for v in d.values()), [k for k, v in d.items() if 'principal@lincoln.edu' in v])
+    check('S19 what is kept about being an admin is only a yes on this device', sbs(pg).get('adm') is True, sbs(pg))
+
+    # Open the app / Admin button switch without asking for the numbers again
+    pg.click('#main [data-tab="School"]'); w(pg, 400)
+    a = pg.evaluate(ADMBTN)
+    check('S19 "Open the app" leaves the Admin page, and the Admin button stays in the top bar but is no longer the current page', pg.evaluate("S.tab") == 'School' and a['vis'] and not a['on'], (pg.evaluate("S.tab"), a))
+    pg.click('#hadm'); w(pg, 500)
+    check('S19 the Admin button comes back to the same numbers without asking again', pg.evaluate("S.tab") == 'Admin' and pg.locator('#main .ad-stats').count() == 1 and len(OVQ(fake)) == 1, (pg.evaluate("S.tab"), len(OVQ(fake))))
+
+    # the copy buttons
+    pg.evaluate("window.__clip=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:t=>{window.__clip.push(t);return Promise.resolve()}},configurable:true})")
+    pg.click('[data-act="admcopy"][data-v="emails"]'); w(pg, 300)
+    clip = pg.evaluate("window.__clip")
+    check('S19 Copy emails copies every email, newest first, separated by commas', clip == ['office@maple.org, formula@test.org, x@evil.test, principal@lincoln.edu'], clip)
+    check('S19 and says how many were copied', pg.locator('#admnote').inner_text() == 'Copied 4 emails.', pg.locator('#admnote').inner_text())
+    pg.click('[data-act="admcopy"][data-v="sheet"]'); w(pg, 300)
+    sheet = pg.evaluate("window.__clip")[1]
+    lines = sheet.split('\n'); cells = [l.split('\t') for l in lines]
+    check('S19 Copy as spreadsheet gives a header line and one line per entry, four tab-separated columns each', lines[0] == 'School or organization\tEmail\tNote\tJoined' and len(lines) == 5 and all(len(c) == 4 for c in cells), lines)
+    check('S19 a note that had a new line and a tab in it stays on one line', cells[2][2] == 'line one line two' and cells[2][1] == 'formula@test.org', cells[2])
+    check('S19 a cell that starts with = (or + - @) gets a quote in front so a spreadsheet will not run it as a formula', cells[2][0] == '\'=cmd|" /C calc"!A1' and all(not re.match(r'^[=+\-@]', c) for r in cells[1:] for c in r), cells[2])
+    check('S19 an empty note is an empty cell, and the date column is year-month-day', cells[1][2] == '' and all(re.match(r'^\d{4}-\d{2}-\d{2}$', r[3]) for r in cells[1:]), [r[3] for r in cells[1:]])
+    check('S19 and says how many rows were copied', pg.locator('#admnote').inner_text() == 'Copied 4 rows.', pg.locator('#admnote').inner_text())
+    pg.evaluate("Object.defineProperty(navigator,'clipboard',{value:{writeText:()=>Promise.reject(new Error('blocked'))},configurable:true});document.execCommand=()=>false")
+    pg.click('[data-act="admcopy"][data-v="emails"]'); w(pg, 400)
+    check('S19 if the browser refuses to copy, the page says so plainly', pg.locator('#admnote').inner_text() == 'Couldn’t copy. Select the text and copy it yourself.', pg.locator('#admnote').inner_text())
+    pg.evaluate("document.execCommand=()=>true")
+    pg.click('[data-act="admcopy"][data-v="emails"]'); w(pg, 400)
+    check('S19 if only the old copy method works, it is used', pg.locator('#admnote').inner_text() == 'Copied 4 emails.', pg.locator('#admnote').inner_text())
+
+    # Refresh: one request even for a double click, shows new entries
+    n0 = len(OVQ(fake))
+    fake.add_waitlist('Brand New School', 'new@school.edu', 'hi', minutes_ago=0)
+    pg.evaluate("()=>{act('admload');act('admload')}")
+    lab, dis = pg.evaluate("(()=>{const b=document.querySelector('#main [data-act=admload]');return [b.textContent,b.disabled]})()")
+    pg.wait_for_function("document.querySelector('#main [data-act=admload]')&&document.querySelector('#main [data-act=admload]').textContent==='Refresh'", timeout=8000); w(pg, 300)
+    check('S19 Refresh shows "Refreshing…" while it works and is switched off', lab == 'Refreshing…' and dis, (lab, dis))
+    check('S19 a double click on Refresh asks only once', len(OVQ(fake)) == n0 + 1, len(OVQ(fake)) - n0)
+    t2 = pg.evaluate("[...document.querySelectorAll('#main .ad-s')].map(e=>e.querySelector('.ad-n').textContent)")
+    check('S19 Refresh shows the new entry at the top and the new total', pg.locator('#main .ad-w b').first.inner_text() == 'Brand New School' and t2[-1] == '5' and pg.locator('#main .pnl h2').first.inner_text() == 'Waitlist (5)', (pg.locator('#main .ad-w b').first.inner_text(), t2))
+
+    # the person is removed from the admin list while the page is open
+    fake.admins.discard(bossid)
+    pg.click('#main [data-act="admload"]'); w(pg, 900)
+    check('S19 if they were removed as admin, Refresh sends them to the app and the button goes', pg.evaluate("S.tab") == 'School' and not pg.locator('#hadm').is_visible() and pg.evaluate("S.stage") == 'app', (pg.evaluate("S.tab"), pg.locator('#hadm').is_visible()))
+    check('S19 and the admin data is gone from memory and from the page', pg.evaluate("ADM") is None and 'principal@lincoln.edu' not in pg.content() and sbs(pg).get('adm') is False, sbs(pg))
+    pg.evaluate("go('Admin')"); w(pg, 300)
+    check('S19 asking for the Admin page again still ends on School', pg.evaluate("S.tab") == 'School')
+    check('S19 no page errors in all of that', errs == [], errs[:3])
+    ctx.close()
+
+    # reload on Admin: a returning admin (remembered on this device) stays there; a cold start does not guess
+    fake = admin_world()
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    pg.wait_for_function(ADMOK, timeout=8000); w(pg, 400)
+    check('S19 a returning admin who was on the Admin page is shown it again, with the numbers', pg.evaluate("S.tab") == 'Admin' and pg.locator('#main h1').inner_text() == 'Admin' and len(pg.locator('#main .ad-w').all()) == 4)
+    pg.reload(); pg.wait_for_function(ADMOK, timeout=8000); w(pg, 300)
+    check('S19 a reload on the Admin page shows it again', pg.evaluate("S.tab") == 'Admin' and pg.evaluate("document.getElementById('hadm').classList.contains('on')"), pg.evaluate("S.tab"))
+    ctx.close()
+    fake = admin_world()
+    ctx, pg, errs, uid = adm_page(D, fake, adm=None)
+    w(pg, 900)
+    a = pg.evaluate(ADMBTN)
+    check('S19 on a device that has not met this admin yet, the page starts on School, then the Admin button appears after the check', pg.evaluate("S.tab") == 'School' and a['vis'] and not a['on'] and sbs(pg).get('adm') is True, (pg.evaluate("S.tab"), a))
+    check('S19 and the numbers are only fetched when the Admin button is used', len(OVQ(fake)) == 0, len(OVQ(fake)))
+    pg.click('#hadm'); pg.wait_for_function(ADMOK, timeout=8000)
+    check('S19 using the button loads the numbers once', pg.evaluate("S.tab") == 'Admin' and len(OVQ(fake)) == 1, len(OVQ(fake)))
+    ctx.close()
+
+    # logging out wipes everything; the next person on the same page is not an admin
+    fake = admin_world()
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    pg.wait_for_function(ADMOK, timeout=8000); w(pg, 300)
+    tab(pg, 'Settings'); pg.click('#main [data-act="logout"]'); w(pg, 900)
+    check('S19 logging out wipes the admin data from memory, the page and this device', pg.evaluate("ADM") is None and 'principal@lincoln.edu' not in pg.content() and all('principal@lincoln.edu' not in v for v in store(pg).values()) and pg.evaluate("Object.keys(sessionStorage).every(k=>!sessionStorage.getItem(k).includes('lincoln.edu'))"))
+    check('S19 and the Admin button is gone while Sign up is back', not pg.locator('#hadm').is_visible() and pg.locator('#hacct').is_visible() and pg.evaluate("S.tab") != 'Admin', (pg.evaluate("S.tab"),))
+    pg.evaluate("go('Admin')"); w(pg, 300)
+    check('S19 a guest asking for the Admin page ends on School', pg.evaluate("S.tab") == 'School')
+    n0 = len(OVQ(fake))
+    tab(pg, 'Settings'); pg.click('#main [data-act="login"]'); w(pg)
+    pg.fill('#a_email', 'stu0@example.com'); pg.fill('#a_pw', PW); pg.click('[data-act="dologin"]'); pg.wait_for_function("S.stage==='app'&&S.me==='stu0@example.com'", timeout=8000); w(pg, 700)
+    check('S19 a student who logs in next on the same page lands on School with no Admin button and no admin data', pg.evaluate("S.tab") == 'School' and not pg.locator('#hadm').is_visible() and pg.evaluate("ADM") is None and len(OVQ(fake)) == n0, (pg.evaluate("S.tab"), len(OVQ(fake)) - n0))
+    pg.evaluate("go('Admin')"); w(pg, 300)
+    check('S19 and cannot open the Admin page either', pg.evaluate("S.tab") == 'School' and 'principal@lincoln.edu' not in pg.content())
+    ctx.close()
+
+    # the login ends while on the Admin page
+    fake = admin_world()
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    pg.wait_for_function(ADMOK, timeout=8000); w(pg, 300)
+    pg.evaluate("SBS.exp=1;SBS.refresh='rt-gone';sbSave()")
+    pg.click('#main [data-act="admload"]'); w(pg, 1500)
+    inf = pg.locator('.inf').first.inner_text() if pg.locator('.inf').count() else '(no notice)'
+    check('S19 if the login ends while on the Admin page, the person gets the log in screen with the plain notice', pg.evaluate("S.stage") == 'login' and inf == 'Your login ended. Please log in again.', (pg.evaluate("S.stage"), inf))
+    check('S19 and the admin data is gone from the page and memory', pg.evaluate("ADM") is None and 'principal@lincoln.edu' not in pg.content() and not pg.locator('#hadm').is_visible(), pg.evaluate("S.tab"))
+    ctx.close()
+
+    # the browser Back button
+    fake = admin_world()
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    pg.wait_for_function(ADMOK, timeout=8000); w(pg, 300)
+    tab(pg, 'Settings'); w(pg, 300)
+    pg.go_back(); w(pg, 700)
+    check('S19 the browser Back button goes from Settings to Admin without asking for the numbers again', pg.evaluate("S.tab") == 'Admin' and pg.locator('#main .ad-stats').count() == 1 and len(OVQ(fake)) == 1, (pg.evaluate("S.tab"), len(OVQ(fake))))
+    ctx.close()
+
+    # problems loading the numbers
+    fake = admin_world(); fake.fail = 'net'
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    w(pg, 1800)
+    check('S19 with no internet the Admin page says so plainly, offers Try again and shows no numbers', 'Can’t reach the server. Check your internet and try again.' in pg.locator('#main').inner_text() and pg.locator('#main [data-act="admload"]').inner_text() == 'Try again' and pg.locator('#main .ad-stats').count() == 0, pg.locator('#main').inner_text()[:200])
+    check('S19 the Admin button is still there (the person is still the admin)', pg.evaluate(ADMBTN)['vis'] is True)
+    fake.fail = None; pg.click('#main [data-act="admload"]'); pg.wait_for_function(ADMOK, timeout=8000)
+    check('S19 Try again then shows the numbers', pg.locator('#main .ad-w').count() == 4)
+    ctx.close()
+    fake = admin_world(); fake.fail = '500'
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    w(pg, 1800)
+    check('S19 a server error shows a plain message, not the server’s text', 'Couldn’t load the numbers. Please try again.' in pg.locator('#main').inner_text() and pg.locator('#main .ad-stats').count() == 0, pg.locator('#main').inner_text()[:200])
+    w(pg, 2500)
+    check('S19 and the page asked only once (no request storm)', len(OVQ(fake)) == 1, len(OVQ(fake)))
+    fake.fail = None; pg.click('#main [data-act="admload"]'); pg.wait_for_function(ADMOK, timeout=8000)
+    check('S19 Try again after that works', len(OVQ(fake)) == 2 and pg.locator('#main .ad-w').count() == 4, len(OVQ(fake)))
+    ctx.close()
+    fake = admin_world()
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    pg.wait_for_function(ADMOK, timeout=8000)
+    fake.sql = False
+    pg.click('#main [data-act="admload"]'); w(pg, 900)
+    check('S19 if the Admin SQL disappears from the project, the page returns to School without errors', pg.evaluate("S.tab") == 'School' and not pg.locator('#hadm').is_visible() and pg.evaluate("ADM") is None, (pg.evaluate("S.tab"),))
+    ctx.close()
+
+    # empty and very full lists
+    fake = Fake(); fake.sql = True; fake.add_user(BOSS, PW); fake.make_admin(BOSS); fake.ov_extra = {'daily': daily([0] * 14)}
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    pg.wait_for_function(ADMOK, timeout=8000); w(pg, 300)
+    check('S19 with nothing yet: "Nobody has joined yet.", no copy buttons, and "Nothing yet." in the other lists', 'Nobody has joined yet.' in pg.locator('#main').inner_text() and pg.locator('[data-act="admcopy"]').count() == 0 and pg.locator('#main .empty').count() == 4, pg.locator('#main .empty').count())
+    check('S19 with no new accounts all 14 bars are the small empty mark', pg.locator('#main .ad-bars i').count() == 14 and pg.locator('#main .ad-bars i.z').count() == 14)
+    check('S19 the tiles show zeros', [t[1] for t in pg.evaluate("[...document.querySelectorAll('#main .ad-s')].map(e=>[e.querySelector('.ad-l').textContent,e.querySelector('.ad-n').textContent])")][2:] == ['0', '0', '0', '0'])
+    ctx.close()
+    fake = Fake(); fake.sql = True; fake.add_user(BOSS, PW); fake.make_admin(BOSS)
+    fake.add_waitlist('One School', 'one@school.edu', None, minutes_ago=2); fake.add_waitlist('Two School', 'two@school.edu', None, minutes_ago=1)
+    fake.ov_extra = {'waitlist': 1234}
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    pg.wait_for_function(ADMOK, timeout=8000); w(pg, 300)
+    check('S19 when there are more entries than are listed, the page says so and where the rest are', pg.locator('#admnote').inner_text() == 'Showing the newest 2 of 1,234. The rest are in Supabase, Table Editor, waitlist.' and pg.locator('#main .pnl h2').first.inner_text() == 'Waitlist (1,234)', pg.locator('#admnote').inner_text())
+    ctx.close()
+    fake = Fake(); fake.sql = True; fake.add_user(BOSS, PW); fake.make_admin(BOSS); fake.add_waitlist('Solo School', 'solo@school.edu', None)
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    pg.wait_for_function(ADMOK, timeout=8000); w(pg, 300)
+    pg.evaluate("window.__clip=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:t=>{window.__clip.push(t);return Promise.resolve()}},configurable:true})")
+    pg.click('[data-act="admcopy"][data-v="emails"]'); w(pg, 300)
+    check('S19 with exactly one entry the message says "1 email", not "1 emails"', pg.locator('#admnote').inner_text() == 'Copied 1 email.' and pg.evaluate("window.__clip") == ['solo@school.edu'], pg.locator('#admnote').inner_text())
+    ctx.close()
+
+    # the top bar and the page fit at every width, with very long text in the waitlist
+    for label, vp in (('desktop', D), ('phone', P), ('narrow', {'width': 320, 'height': 700}), ('tablet', {'width': 800, 'height': 900})):
+        for scheme in ('light', 'dark'):
+            fake = admin_world()
+            fake.add_waitlist('Supercalifragilistic' * 4, 'a-really-long-address-' + 'x' * 50 + '@a-very-long-district-name.example.k12.tx.us', 'n' * 250, minutes_ago=1)
+            ctx, pg, errs, uid = adm_page(vp, fake, adm=True, state=dict(APP, tab='Admin', theme='auto' if scheme == 'dark' else 'light'), scheme=scheme)
+            pg.wait_for_function(ADMOK, timeout=8000); w(pg, 400)
+            g = pg.evaluate(HDR)
+            hb = {k['c']: k for k in g['kids']}
+            adm_, gear = hb.get('hadm'), hb.get('gb')
+            if scheme == 'light':
+                check(f'S19 {label}: the Admin button sits right before the Settings button on the same line', adm_ and gear and 0 <= gear['l'] - adm_['r'] <= 20 and abs((adm_['t'] + adm_['b']) / 2 - (gear['t'] + gear['b']) / 2) < 3, (adm_, gear))
+            check(f'S19 {label} {scheme}: nothing in the top bar overlaps and the Admin page does not scroll sideways, even with very long names and emails', g['ov'] == [] and g['sw'] <= g['iw'], (g['ov'], g['sw'], g['iw']))
+            ctx.close()
 
     # ---------- S16: how it looks ----------
     fake = Fake(); fake.add_user('look@example.com', PW, {'name': 'Look Lee', 'role': 'Student', 'provider': False, 'org': ''})

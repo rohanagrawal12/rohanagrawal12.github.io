@@ -2,7 +2,8 @@
 It answers the same URLs the page calls, with the same JSON shapes the real service uses, and it checks
 the rules that matter: the publishable key only in "apikey", never as a Bearer token; Row Level Security style
 own-rows-only access; token expiry and refresh-token rotation."""
-import json, re, time, uuid
+import collections, json, re, time, uuid
+from datetime import datetime, timedelta, timezone
 from urllib.parse import urlsplit, parse_qs
 
 KEY = 'sb_publishable_sQhpqrrzvwO1oyKf5loSCg_ezg0B8Uo'
@@ -33,12 +34,17 @@ class Fake:
         self.min_pw = 6
         self.ttl = 3600
         self.force401 = 0     # answer this many REST requests with 401 "JWT expired", once each
+        self.sql = False      # supabase/admin.sql has been run: join_waitlist(), is_admin() and admin_overview() exist
+        self.admins = set()   # ids of the accounts on the admins list
+        self.waitlist = []    # {id, org, email, note, created_at}, oldest first
+        self.wl_busy = False  # the database's flood guard is on
+        self.ov_extra = {}    # replaces parts of the admin_overview() answer
         self.n = 0
 
     # ---- helpers the tests use to set things up ----
     def add_user(self, email, pw='secret1', meta=None):
         uid = str(uuid.uuid4())
-        self.users[email] = {'id': uid, 'pw': pw, 'meta': meta or {'name': email.split('@')[0], 'role': 'Student', 'provider': False, 'org': ''}}
+        self.users[email] = {'id': uid, 'pw': pw, 'meta': meta or {'name': email.split('@')[0], 'role': 'Student', 'provider': False, 'org': ''}, 'created': time.time()}
         self.by_id[uid] = email
         m = self.users[email]['meta']
         self.profiles[uid] = {'id': uid, 'name': m.get('name') or email.split('@')[0], 'role': m.get('role', 'Student'),
@@ -64,6 +70,38 @@ class Fake:
 
     def calls(self, method=None, contains=None):
         return [c for c in self.log if (method is None or c['m'] == method) and (contains is None or contains in c['path'] + ('?' + c['qs'] if c['qs'] else ''))]
+
+    def make_admin(self, email):
+        """supabase/admin.sql has been run and this account is on the admins list."""
+        self.sql = True
+        self.admins.add(self.users[email]['id'])
+
+    def add_waitlist(self, org, email, note=None, minutes_ago=0):
+        self.waitlist.append({'id': len(self.waitlist) + 1, 'org': org, 'email': email, 'note': note,
+                              'created_at': (datetime.now(timezone.utc) - timedelta(minutes=minutes_ago)).isoformat()})
+
+    def overview(self):
+        """What admin_overview() answers, worked out from the pretend data (the real one is SQL, tested in test_sql.py)."""
+        now = time.time()
+        day = lambda t: datetime.fromtimestamp(t, timezone.utc).date()
+        today = day(now)
+        daily = []
+        for i in range(13, -1, -1):
+            d = today - timedelta(days=i)
+            daily.append({'day': d.isoformat(), 'n': sum(1 for u in self.users.values() if day(u.get('created', now)) == d)})
+        saved = {}
+        for a in self.activity:
+            if a['kind'] == 'saved':
+                saved[a['opp_id']] = saved.get(a['opp_id'], 0) + 1
+        by = lambda key: sorted(({'name': k, 'n': n} for k, n in collections.Counter(
+            (p['quiz_answers'] or {}).get(key) for p in self.profiles.values() if (p['quiz_answers'] or {}).get(key)).items()), key=lambda x: (-x['n'], x['name']))
+        o = {'accounts': len(self.users), 'accounts_7d': sum(1 for u in self.users.values() if now - u.get('created', now) < 7 * 86400),
+             'quiz_done': sum(1 for p in self.profiles.values() if p['quiz_answers']), 'providers': sum(1 for p in self.profiles.values() if p['is_provider']),
+             'saved': sum(saved.values()), 'doing': sum(1 for a in self.activity if a['kind'] == 'doing'), 'waitlist': len(self.waitlist),
+             'daily': daily, 'top_saved': [{'opp_id': k, 'n': n} for k, n in sorted(saved.items(), key=lambda x: (-x[1], x[0]))[:8]],
+             'schools': by('school')[:6], 'grades': by('grade')[:9], 'waitlist_rows': list(reversed(self.waitlist))[:500]}
+        o.update(self.ov_extra)
+        return o
 
     # ---- the route handler ----
     def handler(self, route, request):
@@ -166,6 +204,32 @@ class Fake:
         # ---------------- data (REST) ----------------
         if not path.startswith('/rest/v1/'):
             return out(404, {'message': 'not found'})
+
+        def missing(sig):
+            return out(404, {'code': 'PGRST202', 'details': f'Searched for the function public.{sig} in the schema cache, but no matches were found.',
+                             'hint': None, 'message': f'Could not find the function public.{sig} in the schema cache'})
+
+        # visitors can join the waitlist with the publishable key alone, signed in or not
+        if path == '/rest/v1/rpc/join_waitlist' and request.method == 'POST':
+            if auth:
+                self.violations.append('join_waitlist must be sent with the publishable key only, no Authorization header')
+            if not self.sql:
+                return missing('join_waitlist(p_email, p_note, p_org)')
+            b = body if isinstance(body, dict) else {}
+            org, email, note = (b.get('p_org') or '').strip(), (b.get('p_email') or '').strip().lower(), (b.get('p_note') or '').strip() or None
+            bad = lambda msg: out(400, {'code': 'P0001', 'details': None, 'hint': None, 'message': msg})
+            if not 2 <= len(org) <= 120:
+                return bad('Enter the name of your school or organization.')
+            if len(email) > 254 or not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', email):
+                return bad('Enter a valid email address.')
+            if note and len(note) > 500:
+                return bad('That note is too long. Keep it under 500 characters.')
+            if any(w['email'] == email for w in self.waitlist):
+                return out(204)
+            if self.wl_busy:
+                return bad('The waitlist is busy right now. Please try again in a few minutes.')
+            self.add_waitlist(org, email, note)
+            return out(204)
         tok = (auth or '').replace('Bearer ', '') if auth else ''
         info = self.access.get(tok)
         if self.force401 > 0:
@@ -224,12 +288,23 @@ class Fake:
                     return out(204)
                 self.activity = [a for a in self.activity if not (a['user_id'] == uid and (kind is None or a['kind'] == kind) and (ids is None or a['opp_id'] in ids))]
                 return out(204)
+        if what == 'rpc/is_admin' and m == 'POST':
+            if not self.sql:
+                return missing('is_admin without parameters')
+            return out(200, uid in self.admins)
+        if what == 'rpc/admin_overview' and m == 'POST':
+            if not self.sql:
+                return missing('admin_overview without parameters')
+            if uid not in self.admins:
+                return out(403, {'code': '42501', 'details': None, 'hint': None, 'message': 'Admins only.'})
+            return out(200, self.overview())
         if what == 'rpc/delete_my_account' and m == 'POST':
             if not self.rpc:
                 return out(404, {'code': 'PGRST202', 'details': 'Searched for the function public.delete_my_account without parameters, but no matches were found in the schema cache.',
                                  'hint': None, 'message': 'Could not find the function public.delete_my_account without parameters in the schema cache'})
             em = self.by_id.pop(uid, None)
             self.users.pop(em, None)
+            self.admins.discard(uid)
             self.profiles.pop(uid, None)
             self.activity = [a for a in self.activity if a['user_id'] != uid]
             for t in [t for t, (u4, _) in self.access.items() if u4 == uid]:
