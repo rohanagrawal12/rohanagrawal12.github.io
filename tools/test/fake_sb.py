@@ -39,12 +39,13 @@ class Fake:
         self.waitlist = []    # {id, org, email, note, created_at}, oldest first
         self.wl_busy = False  # the database's flood guard is on
         self.ov_extra = {}    # replaces parts of the admin_overview() answer
+        self.ov_old = False   # admin.sql from before the accounts list: no accounts_list, no has_account
         self.n = 0
 
     # ---- helpers the tests use to set things up ----
     def add_user(self, email, pw='secret1', meta=None):
         uid = str(uuid.uuid4())
-        self.users[email] = {'id': uid, 'pw': pw, 'meta': meta or {'name': email.split('@')[0], 'role': 'Student', 'provider': False, 'org': ''}, 'created': time.time()}
+        self.users[email] = {'id': uid, 'pw': pw, 'meta': meta or {'name': email.split('@')[0], 'role': 'Student', 'provider': False, 'org': ''}, 'created': time.time(), 'last': None}
         self.by_id[uid] = email
         m = self.users[email]['meta']
         self.profiles[uid] = {'id': uid, 'name': m.get('name') or email.split('@')[0], 'role': m.get('role', 'Student'),
@@ -99,7 +100,18 @@ class Fake:
              'quiz_done': sum(1 for p in self.profiles.values() if p['quiz_answers']), 'providers': sum(1 for p in self.profiles.values() if p['is_provider']),
              'saved': sum(saved.values()), 'doing': sum(1 for a in self.activity if a['kind'] == 'doing'), 'waitlist': len(self.waitlist),
              'daily': daily, 'top_saved': [{'opp_id': k, 'n': n} for k, n in sorted(saved.items(), key=lambda x: (-x[1], x[0]))[:8]],
-             'schools': by('school')[:6], 'grades': by('grade')[:9], 'waitlist_rows': list(reversed(self.waitlist))[:500]}
+             'schools': by('school')[:6], 'grades': by('grade')[:9], 'waitlist_rows': [dict(w, has_account=w['email'] in self.users) for w in reversed(self.waitlist)][:500]}
+        iso = lambda t: None if t is None else datetime.fromtimestamp(t, timezone.utc).isoformat()
+
+        def acct(email, u):
+            p, m = self.profiles.get(u['id'], {}), u.get('meta') or {}
+            return {'name': (p.get('name') or m.get('name') or '').strip() or None, 'email': email, 'role': p.get('role') or m.get('role') or None,
+                    'provider': bool(p.get('is_provider', m.get('provider'))), 'created_at': iso(u.get('created', now)), 'last_login': iso(u.get('last')),
+                    'quiz_done': bool(p.get('quiz_answers')), 'wl_org': next((w['org'] for w in self.waitlist if w['email'] == email.lower()), None)}
+        o['accounts_list'] = [acct(e, u) for e, u in sorted(self.users.items(), key=lambda x: -x[1].get('created', now))][:500]
+        if self.ov_old:
+            o.pop('accounts_list')
+            o['waitlist_rows'] = [{k: v for k, v in w.items() if k != 'has_account'} for w in o['waitlist_rows']]
         o.update(self.ov_extra)
         return o
 
@@ -149,7 +161,7 @@ class Fake:
             if email in self.users:
                 return out(422, {'code': 422, 'error_code': 'user_already_exists', 'msg': 'User already registered'})
             uid = str(uuid.uuid4())
-            self.users[email] = {'id': uid, 'pw': pw, 'meta': body.get('data') or {}}
+            self.users[email] = {'id': uid, 'pw': pw, 'meta': body.get('data') or {}, 'created': time.time(), 'last': None if self.confirm else time.time()}
             self.by_id[uid] = email
             if self.confirm:
                 return out(200, {'id': uid, 'email': email, 'user_metadata': self.users[email]['meta']})
@@ -162,6 +174,7 @@ class Fake:
                 u2 = self.users.get(email)
                 if not u2 or u2['pw'] != body.get('password'):
                     return out(400, {'code': 400, 'error_code': 'invalid_credentials', 'msg': 'Invalid login credentials'})
+                u2['last'] = time.time()
                 return out(200, self.session(u2['id']))
             if q.get('grant_type') == 'refresh_token':
                 rt = body.get('refresh_token')

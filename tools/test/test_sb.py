@@ -940,7 +940,9 @@ try:
     check('S19 Schools and Grades show names with counts', sg == ['Schools', 'The Village School=3', 'Another School=1', 'Grades', '10th grade=2', '11th grade=1', '9th grade=1'], sg)
     check('S19 nobody’s quiz answers or other private text appear anywhere on the page', 'PRIVATE ANSWER' not in BODY(pg) and 'PRIVATE ANSWER' not in pg.content())
     lnk = pg.evaluate("(()=>{const a=document.querySelector('#main a[href*=\"supabase.com\"]');return a?[a.href,a.target,a.rel]:null})()")
-    check('S19 the footer says these are counts only and links to the Supabase project in a new tab', 'These are counts only' in pg.locator('#main > p.meta').last.inner_text() and lnk == ['https://supabase.com/dashboard/project/urotelcllngtcctheelb', '_blank', 'noopener'], lnk)
+    foot = pg.locator('#main > p.meta').last.inner_text()
+    check('S19 the footer says what accounts show, says quiz answers and saved items are never shown, and links to the Supabase project in a new tab',
+          'Accounts show name, email and dates.' in foot and 'quiz answers or saved items are shown' in foot and 'counts only' not in foot and lnk == ['https://supabase.com/dashboard/project/urotelcllngtcctheelb', '_blank', 'noopener'], (foot, lnk))
     check('S19 the page shows when it was updated', 'Updated ' in pg.locator('#main > p.meta').last.inner_text(), pg.locator('#main > p.meta').last.inner_text())
     d = store(pg)
     check('S19 the waitlist and the numbers are not kept in the browser storage', all('principal@lincoln.edu' not in v and 'PRIVATE ANSWER' not in v and 'Maple Middle' not in v for v in d.values()), [k for k, v in d.items() if 'principal@lincoln.edu' in v])
@@ -1103,7 +1105,9 @@ try:
     for label, vp in (('desktop', D), ('phone', P), ('narrow', {'width': 320, 'height': 700}), ('tablet', {'width': 800, 'height': 900})):
         for scheme in ('light', 'dark'):
             fake = admin_world()
-            fake.add_waitlist('Supercalifragilistic' * 4, 'a-really-long-address-' + 'x' * 50 + '@a-very-long-district-name.example.k12.tx.us', 'n' * 250, minutes_ago=1)
+            LONGE = 'a-really-long-address-' + 'x' * 50 + '@a-very-long-district-name.example.k12.tx.us'
+            fake.add_waitlist('Supercalifragilistic' * 4, LONGE, 'n' * 250, minutes_ago=1)
+            fake.add_user(LONGE, PW, {'name': 'Verylongname' * 12, 'role': 'Teacher', 'provider': True, 'org': 'Org'})   # the same person has an account, so both lists show their tag
             ctx, pg, errs, uid = adm_page(vp, fake, adm=True, state=dict(APP, tab='Admin', theme='auto' if scheme == 'dark' else 'light'), scheme=scheme)
             pg.wait_for_function(ADMOK, timeout=8000); w(pg, 400)
             g = pg.evaluate(HDR)
@@ -1113,6 +1117,168 @@ try:
                 check(f'S19 {label}: the Admin button sits right before the Settings button on the same line', adm_ and gear and 0 <= gear['l'] - adm_['r'] <= 20 and abs((adm_['t'] + adm_['b']) / 2 - (gear['t'] + gear['b']) / 2) < 3, (adm_, gear))
             check(f'S19 {label} {scheme}: nothing in the top bar overlaps and the Admin page does not scroll sideways, even with very long names and emails', g['ov'] == [] and g['sw'] <= g['iw'], (g['ov'], g['sw'], g['iw']))
             ctx.close()
+
+    # ---------- S20: the Accounts list on the Admin page (who signed up, and who is on the waitlist) ----------
+    HRS = 3600
+    def acct_world(extra=0):
+        """One admin and four people with different details (one is also on the waitlist). `extra` more accounts fill a long list."""
+        f = Fake(); f.sql = True
+        t = time.time()
+        f.add_user(BOSS, PW, {'name': 'Boss Person', 'role': 'Teacher', 'provider': False, 'org': ''}); f.make_admin(BOSS)
+        f.users[BOSS]['created'] = t - 30 * 86400; f.users[BOSS]['last'] = t - 60
+        def person(email, name, role, prov, created, last, quiz=None, org=''):
+            u = f.add_user(email, PW, {'name': name, 'role': role, 'provider': prov, 'org': org})
+            f.users[email]['created'] = created; f.users[email]['last'] = last
+            if quiz: f.profiles[u]['quiz_answers'] = quiz
+            return u
+        person('nina@example.com', 'Nina Newest', 'Student', False, t - 2 * HRS, t - 1 * HRS, {'grade': '9th grade', 'school': 'The Village School', 'learn': 'PRIVATE ANSWER 1'})
+        person('wanda@example.com', 'Wanda Waitlist', 'Teacher', True, t - 26 * HRS, t - 3 * HRS, None, 'Lincoln High')
+        person('<u>xss</u>@example.com', '<img src=x onerror="window.__xss2=1;alert(2)">Eve', 'Student', False, t - 3 * 86400, None)   # odd text in both the name and the email
+        nn = person('noname@example.com', 'x', 'Student', False, t - 5 * 86400, t - 4 * 86400)
+        f.profiles[nn]['name'] = ''; f.users['noname@example.com']['meta']['name'] = ''
+        for i in range(extra):
+            person(f'bulk{i:03d}@example.com', f'Bulk {i:03d}', 'Student', False, t - (10 + i) * 86400 - 3600, t - 9 * 86400)
+        f.add_waitlist('Lincoln High', 'wanda@example.com', 'We run 40 clubs', minutes_ago=90)
+        f.add_waitlist('Other School', 'nobody@else.org', None, minutes_ago=10)
+        f.ov_extra = {'daily': daily(DAYS)}
+        return f
+    ACCS = "[...document.querySelectorAll('#main .ad-a')].map(e=>({name:e.querySelector('b').textContent,tag:e.querySelector('.ad-t')?e.querySelector('.ad-t').textContent:null,email:e.querySelector('.em').textContent,meta:e.querySelector('.meta').textContent}))"
+    WLR = "[...document.querySelectorAll('#main .ad-w')].map(e=>({org:e.querySelector('b').textContent,email:e.querySelector('.em').firstChild.textContent,tag:e.querySelector('.em .ad-t')?e.querySelector('.em .ad-t').textContent:null}))"
+    H2S = "[...document.querySelectorAll('#main .pnl h2')].map(h=>h.textContent)"
+    APNL = "(()=>{const p=[...document.querySelectorAll('#main .pnl')].find(x=>x.querySelector('h2').textContent.startsWith('Accounts'));return p?{text:p.innerText,note:p.querySelector('p.meta')?p.querySelector('p.meta').textContent:null,btn:p.querySelector('[data-act=admmore]')?p.querySelector('[data-act=admmore]').textContent:null}:null})()"
+    DT = r'\w{3} \d{1,2}, \d{4}, \d{1,2}:\d{2}(?: [AP]M)?'
+
+    fake = acct_world()
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    pg.wait_for_function(ADMOK, timeout=8000); w(pg, 400)
+    d0 = len(DIALOGS)
+    check('S20 the Admin page lists the Waitlist, then Accounts, then the sign-up chart and the other lists', pg.evaluate(H2S) == ['Waitlist (2)', 'Accounts (5)', 'New accounts, last 14 days', 'Most saved', 'Schools', 'Grades'], pg.evaluate(H2S))
+    rows = pg.evaluate(ACCS)
+    check('S20 every account is listed, newest first, with its name and email',
+          [(r['name'], r['email']) for r in rows] == [('Nina Newest', 'nina@example.com'), ('Wanda Waitlist', 'wanda@example.com'), ('<img src=x onerror="window.__xss2=1;alert(2)">Eve', '<u>xss</u>@example.com'), ('No name', 'noname@example.com'), ('Boss Person', BOSS)], rows)
+    pat = lambda role, last, quiz: re.compile('^' + role + ' · Joined ' + DT + ' · Last log in ' + last + ' · ' + quiz + '$')
+    metas = [r['meta'].replace(' ', ' ').replace(' ', ' ') for r in rows]
+    exp = [pat('Student', DT, 'Quiz done'), pat('Teacher · Provider', DT, 'No quiz yet'), pat('Student', 'never', 'No quiz yet'), pat('Student', DT, 'No quiz yet'), pat('Teacher', DT, 'No quiz yet')]
+    check('S20 each account shows its role, when it joined, when it last logged in (or "never") and whether the quiz is done', all(e.match(m) for e, m in zip(exp, metas)), metas)
+    check('S20 only the person who is on the waitlist has a tag, and it names the school they typed', [r['tag'] for r in rows] == [None, 'On the waitlist: Lincoln High', None, None, None], [r['tag'] for r in rows])
+    wl = pg.evaluate(WLR)
+    check('S20 in the waitlist, the entry whose email has an account says "Has an account" and the other one does not', [(r['org'], r['email'], r['tag']) for r in wl] == [('Other School', 'nobody@else.org', None), ('Lincoln High', 'wanda@example.com', 'Has an account')], wl)
+    check('S20 an odd name and an odd email are shown as plain text: no HTML made, no script run', pg.locator('#main .ad-a img').count() == 0 and pg.locator('#main .ad-a u').count() == 0 and pg.evaluate("window.__xss2") is None and len(DIALOGS) == d0, (pg.locator('#main .ad-a img').count(), pg.locator('#main .ad-a u').count(), DIALOGS[d0:]))
+    check('S20 nobody’s quiz answers appear anywhere on the page', 'PRIVATE ANSWER' not in BODY(pg) and 'PRIVATE ANSWER' not in pg.content())
+    ds = store(pg)
+    check('S20 the accounts list is not kept in the browser storage', all('nina@example.com' not in v and 'Wanda' not in v and 'noname@example.com' not in v for v in ds.values()), [k for k, v in ds.items() if 'nina@example.com' in v])
+    check('S20 the whole page came from the one overview request', len(OVQ(fake)) == 1, len(OVQ(fake)))
+    check('S20 the Accounts tile and the list agree, and no "showing the newest" note is needed', pg.evaluate("document.querySelector('#main .ad-n').textContent") == '5' and pg.evaluate(APNL)['note'] is None, pg.evaluate(APNL))
+    foot = pg.locator('#main > p.meta').last.inner_text()
+    check('S20 the footer says accounts show name, email and dates (not "counts only") and that quiz answers and saved items are never shown', 'Accounts show name, email and dates. Nobody’s quiz answers or saved items are shown.' in foot and 'counts only' not in foot, foot)
+    check('S20 no page errors', errs == [], errs[:3])
+    ctx.close()
+
+    # a long list: 10 first, then 20 more at a time, kept on Refresh, forgotten on log out
+    fake = acct_world(extra=55)
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    pg.wait_for_function(ADMOK, timeout=8000); w(pg, 400)
+    cnt = lambda: pg.locator('#main .ad-a').count()
+    btn = lambda: pg.evaluate(APNL)['btn']
+    check('S20 a long list starts with 10 accounts and a button that says how many are left', cnt() == 10 and btn() == 'Show 20 more · 50 left' and pg.evaluate(H2S)[1] == 'Accounts (60)', (cnt(), btn()))
+    pg.click('#main [data-act="admmore"]'); w(pg, 300)
+    check('S20 the button adds 20 more', cnt() == 30 and btn() == 'Show 20 more · 30 left', (cnt(), btn()))
+    pg.click('#main [data-act="admmore"]'); w(pg, 300)
+    check('S20 near the end it says "Show the last 10"', cnt() == 50 and btn() == 'Show the last 10', (cnt(), btn()))
+    pg.click('#main [data-act="admmore"]'); w(pg, 300)
+    check('S20 when everything is shown the button is gone, and no new request was made', cnt() == 60 and btn() is None and len(OVQ(fake)) == 1, (cnt(), btn(), len(OVQ(fake))))
+    pg.click('#main [data-act="admload"]'); w(pg, 900)
+    check('S20 Refresh keeps the list as long as it was', cnt() == 60 and len(OVQ(fake)) == 2, (cnt(), len(OVQ(fake))))
+    tab(pg, 'Settings'); pg.click('#main [data-act="logout"]'); w(pg, 900)
+    check('S20 logging out forgets how much of the list was open and the list itself', pg.evaluate("ADMLIM") == 10 and 'bulk000@example.com' not in pg.content(), pg.evaluate("ADMLIM"))
+    check('S20 no page errors', errs == [], errs[:3])
+    ctx.close()
+
+    # more accounts than the list holds
+    fake = acct_world(); fake.ov_extra = {'accounts': 1234, 'daily': daily(DAYS)}
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    pg.wait_for_function(ADMOK, timeout=8000); w(pg, 300)
+    check('S20 when there are more accounts than are listed, the page says so and where to find everyone', pg.evaluate(H2S)[1] == 'Accounts (1,234)' and pg.evaluate(APNL)['note'] == 'Showing the newest 5 of 1,234. Everyone is in Supabase, Authentication, Users.', pg.evaluate(APNL))
+    ctx.close()
+
+    # admin.sql from before the accounts list: the page says what to do and everything else still works
+    fake = acct_world(); fake.ov_old = True
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    shown = wait_ok(pg, ADMOK); w(pg, 400)
+    check('S20 with the older admin.sql the Admin page still loads', shown, errs[:2])
+    ap = pg.evaluate(APNL)
+    check('S20 with the older admin.sql the Accounts panel says names and emails are not turned on yet, and shows no rows',
+          bool(ap) and 'Names and emails aren’t turned on yet. Run the newest admin.sql in Supabase, then tap Refresh.' in ap['text'] and pg.locator('#main .ad-a').count() == 0 and (pg.evaluate(H2S) + ['', ''])[1] == 'Accounts (5)', ap)
+    check('S20 and the waitlist and the other numbers still work, with no "Has an account" tags', pg.locator('#main .ad-w').count() == 2 and pg.locator('#main .ad-t').count() == 0 and pg.locator('#main .ad-bars i').count() == 14, pg.locator('#main .ad-w').count())
+    fake.ov_old = False
+    pg.click('#main [data-act="admload"]'); w(pg, 900)
+    check('S20 once the newest admin.sql is run, Refresh shows the list and the tags', pg.locator('#main .ad-a').count() == 5 and pg.locator('#main .ad-t').count() == 2, (pg.locator('#main .ad-a').count(), pg.locator('#main .ad-t').count()))
+    check('S20 no page errors with either version', errs == [], errs[:3])
+    ctx.close()
+
+    # an empty list
+    fake = acct_world(); fake.ov_extra = {'accounts_list': [], 'daily': daily(DAYS)}
+    ctx, pg, errs, uid = adm_page(D, fake, adm=True)
+    pg.wait_for_function(ADMOK, timeout=8000); w(pg, 300)
+    check('S20 an empty list says "No accounts yet."', 'No accounts yet.' in pg.evaluate(APNL)['text'] and pg.locator('#main .ad-a').count() == 0)
+    ctx.close()
+
+    # a student never gets the list: the database refuses, and nothing is shown
+    fake = acct_world()
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'nina@example.com', state=dict(APP, tab='Admin'), adm=True)
+    w(pg, 1200)
+    check('S20 a student never sees the accounts list, even if their device says Admin', pg.evaluate("S.tab") == 'School' and 'wanda@example.com' not in pg.content() and 'boss@example.com' not in pg.content() and pg.evaluate("ADM") is None, pg.evaluate("S.tab"))
+    ctx.close()
+
+    # ---------- S21: a big "Take the quiz" banner at the top of the lists, for anyone who has not taken the quiz ----------
+    QB = "(()=>{const q=document.querySelector('#main .qb');if(!q)return null;const r=q.getBoundingClientRect(),b=q.querySelector('button'),br=b.getBoundingClientRect();return{first:document.getElementById('main').firstElementChild===q,top:r.top,bottom:r.bottom,w:r.width,bw:br.width,bt:br.top,bb:br.bottom,title:q.querySelector('b').textContent,sub:q.querySelector('span').textContent,btn:b.textContent,act:b.dataset.act,iw:innerWidth,ih:innerHeight,sw:document.documentElement.scrollWidth}})()"
+    QN = "document.querySelectorAll('#main [data-act=quiz]').length"
+    fake = Fake()
+    for label, vp, scheme in [('desktop-light', D, 'light'), ('desktop-dark', D, 'dark'), ('phone-light', P, 'light'), ('phone-dark', P, 'dark'), ('narrow-light', {'width': 320, 'height': 700}, 'light')]:
+        ctx, pg, errs = newpage(b, vp, fake, dict(APP0, theme='auto' if scheme == 'dark' else 'light'), scheme=scheme)
+        q = pg.evaluate(QB)
+        check(f'S21 {label}: someone who has not taken the quiz gets a banner as the very first thing on the School page', bool(q) and q['first'], q)
+        if q:
+            check(f'S21 {label}: it says what the quiz is for and has one clear button', q['title'] == 'Take the quiz to find your matches' and q['sub'] == 'Answer a few questions and we’ll put your best matches first. Takes about 2 minutes.' and q['btn'] == 'Take the quiz' and q['act'] == 'quiz', q)
+            check(f'S21 {label}: the button is on the first screen without scrolling, above the bottom bar, and big enough to tap', 0 <= q['bt'] and q['bb'] <= q['ih'] - (80 if vp['width'] < 500 else 0) and q['bb'] - q['bt'] >= 44, q)
+            check(f'S21 {label}: it is the only Take the quiz button on the page, and the page does not scroll sideways', pg.evaluate(QN) == 1 and q['sw'] <= q['iw'], (pg.evaluate(QN), q['sw'], q['iw']))
+            if vp['width'] < 560:
+                check(f'S21 {label}: on a small screen the button runs the full width of the banner', q['bw'] >= q['w'] - 40, q)
+            else:
+                check(f'S21 {label}: on a big screen the button sits at the right and does not stretch', q['bw'] < q['w'] / 3, q)
+        pg.screenshot(path=f'{SP}/shots/quiz-banner-{label}.png')
+        if label in ('desktop-light', 'phone-light'):
+            pg.click('#main .qb [data-act="quiz"]'); w(pg, 400)
+            check(f'S21 {label}: the banner button starts the quiz', pg.evaluate("[S.stage,S.step]") == ['quiz', 0], pg.evaluate("[S.stage,S.step]"))
+        errs_ = list(errs)
+        check(f'S21 {label}: no page errors', errs_ == [], errs_[:3])
+        ctx.close()
+
+    ctx, pg, errs = newpage(b, D, fake, APP0)
+    sub = lambda: pg.evaluate("(()=>{const e=document.querySelector('#main > p.mut');return e?e.textContent:null})()")
+    check('S21 without the quiz the page says it is not sorted for the person yet, and the toolbar has no second quiz button', sub() == 'Not sorted for you yet.' and pg.locator('#main .cnt [data-act="quiz"]').count() == 0, sub())
+    on = {}
+    for t_ in ('Community', 'Explore', 'My Activities', 'Settings'):
+        tab(pg, t_); on[t_] = (pg.locator('#main .qb').count(), pg.evaluate(QN))
+    check('S21 the banner is also on Community and Explore, and not on My Activities or Settings (which has its own button)', on == {'Community': (1, 1), 'Explore': (1, 1), 'My Activities': (0, 0), 'Settings': (0, 1)}, on)
+    tab(pg, 'School')
+    pg.evaluate("S.done=true;render()")
+    check('S21 once the quiz is done the banner is gone, the page says best matches first, and Retake quiz is back in the toolbar', pg.locator('#main .qb').count() == 0 and sub() == 'Best matches first.' and pg.locator('#main .cnt [data-act="quiz"]').inner_text() == 'Retake quiz' and pg.evaluate(QN) == 1, (sub(),))
+    pg.evaluate("S.done=false;render()")
+    check('S21 and it comes back if the answers are cleared', pg.locator('#main .qb').count() == 1)
+    ctx.close()
+    ctx, pg, errs = newpage(b, D, fake, APP)
+    check('S21 someone who already took the quiz never sees the banner', pg.locator('#main .qb').count() == 0 and sub() == 'Best matches first.' and pg.locator('#main .cnt [data-act="quiz"]').inner_text() == 'Retake quiz')
+    ctx.close()
+    # a brand new account that skipped the quiz (the usual case right after signing up)
+    fake = Fake()
+    ctx, pg, errs, uid, sess = logged_in_page(b, P, fake, 'newbie@example.com', state=dict(APP0, tab='School'))
+    w(pg, 900)
+    q = pg.evaluate(QB)
+    check('S21 a signed-in account with no quiz yet sees the banner too, and it starts the quiz', bool(q) and q['first'] and q['btn'] == 'Take the quiz', q)
+    pg.click('#main .qb [data-act="quiz"]'); w(pg, 400)
+    check('S21 ...and the quiz opens for them', pg.evaluate("[S.stage,S.step]") == ['quiz', 0], pg.evaluate("[S.stage,S.step]"))
+    ctx.close()
 
     # ---------- S16: how it looks ----------
     fake = Fake(); fake.add_user('look@example.com', PW, {'name': 'Look Lee', 'role': 'Student', 'provider': False, 'org': ''})
