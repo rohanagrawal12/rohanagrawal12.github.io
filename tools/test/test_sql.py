@@ -116,10 +116,12 @@ try:
     check('S0 and then shows nobody as admin, so the owner can tell to sign up first', r.stdout.strip() == '', repr(r.stdout))
 
     # ---------- some pretend people ----------
-    def user(email, days_ago=0):
-        return must(f"insert into auth.users (email, created_at) values ('{email}', now() - interval '{days_ago} days' - interval '1 hour') returning id")
+    def user(email, days_ago=0, login_hours_ago=None, meta=None):
+        ll = 'null' if login_hours_ago is None else f"now() - interval '{login_hours_ago} hours'"
+        md = (json.dumps(meta) if meta else '{}').replace("'", "''")
+        return must(f"insert into auth.users (email, created_at, last_sign_in_at, encrypted_password, raw_user_meta_data) values ('{email}', now() - interval '{days_ago} days' - interval '1 hour', {ll}, 'HASH-SECRET-{email}', '{md}'::jsonb) returning id")
 
-    OWN = user(OWNER, 3); STU = user('student@example.com', 0); STU2 = user('kid2@example.com', 1); OLD = user('old@example.com', 40)
+    OWN = user(OWNER, 3, 2); STU = user('student@example.com', 0, 0.5); STU2 = user('kid2@example.com', 1); OLD = user('old@example.com', 40, 240)
     r = run_admin()
     check('S0 admin.sql runs again once the account exists (it is safe to run twice)', r.returncode == 0, r.stderr)
     check('S0 and then lists that account as the admin', r.stdout.strip().startswith(OWNER + '|'), r.stdout)
@@ -132,6 +134,7 @@ try:
     zero = ['accounts_7d', 'quiz_done', 'providers', 'saved', 'doing', 'waitlist']
     check('S0 with no data yet the admin gets zeros, not errors or nulls', J0['accounts'] == 4 and all(J0[k] == 0 for k in zero if k != 'accounts_7d') and J0['accounts_7d'] == 3, J0)
     check('S0 and empty lists, with 14 empty days', J0['top_saved'] == [] and J0['schools'] == [] and J0['grades'] == [] and J0['waitlist_rows'] == [] and len(J0['daily']) == 14, J0)
+    check('S0 accounts with no profile row yet are still listed, with no name', len(J0['accounts_list']) == 4 and all(a['name'] is None and a['quiz_done'] is False and a['provider'] is False and a['wl_org'] is None for a in J0['accounts_list']), J0['accounts_list'])
 
     for uid, name, ans, prov in [(OWN, 'Owner', {'grade': '12th grade', 'school': 'The Village School'}, False),
                                  (STU, 'Stu', {'grade': '10th grade', 'school': 'The Village School', 'learn': 'secret words'}, False),
@@ -232,7 +235,7 @@ try:
     except Exception:
         J = {}
         check('S5 admin_overview() returns JSON', False, raw[:300])
-    exp_keys = {'accounts', 'accounts_7d', 'quiz_done', 'providers', 'saved', 'doing', 'waitlist', 'daily', 'top_saved', 'schools', 'grades', 'waitlist_rows'}
+    exp_keys = {'accounts', 'accounts_7d', 'quiz_done', 'providers', 'saved', 'doing', 'waitlist', 'daily', 'top_saved', 'schools', 'grades', 'accounts_list', 'waitlist_rows'}
     check('S5 it returns exactly the expected parts and nothing else', set(J) == exp_keys, sorted(set(J) ^ exp_keys))
     check('S5 accounts: 4 in total', J.get('accounts') == 4, J.get('accounts'))
     check('S5 accounts in the last 7 days: 3 (the 40-day-old one is left out)', J.get('accounts_7d') == 3, J.get('accounts_7d'))
@@ -254,13 +257,50 @@ try:
     got = {x['day']: x['n'] for x in d}
     check('S5 daily: each day shows the right number of new accounts', sum(got.values()) == 3 and all(got.get(k, 0) == v for k, v in exp.items() if k >= d[0]['day']), (got, exp))
     rows = J.get('waitlist_rows', [])
-    check('S5 waitlist rows: newest first, each with name, email, note and time', len(rows) == count() and rows[0]['org'] == 'Fresh School' and set(rows[0]) == {'id', 'org', 'email', 'note', 'created_at'}, rows[:1])
+    check('S5 waitlist rows: newest first, each with name, email, note, time and whether that email has an account', len(rows) == count() and rows[0]['org'] == 'Fresh School' and set(rows[0]) == {'id', 'org', 'email', 'note', 'created_at', 'has_account'}, rows[:1])
     check('S5 the note a visitor wrote is there', any(x['note'] == 'We have 40 clubs.' and x['email'] == 'teacher@school.org' for x in rows))
-    check('S5 no quiz answer text, name or account email leaks into the result', 'secret words' not in raw and 'student@example.com' not in raw and 'kid2@example.com' not in raw and OWNER not in raw)
+    check('S5 no quiz answer text and no password hash leaks into the result', 'secret words' not in raw and 'quiz_answers' not in raw and 'HASH-SECRET' not in raw and 'encrypted_password' not in raw, raw[:300])
     must("insert into public.waitlist (org, email, created_at) select 'Many ' || g, 'many' || g || '@example.com', now() - interval '1 day' - g * interval '1 second' from generate_series(1, 600) g")
     J2 = json.loads(one('select public.admin_overview()', **ADM))
     check('S5 the list holds the newest 500, while the count is the real total', len(J2['waitlist_rows']) == 500 and J2['waitlist'] == count() and J2['waitlist'] > 500, (len(J2['waitlist_rows']), J2['waitlist']))
     must("delete from public.waitlist where org like 'Many %'")
+
+    # ---------- the accounts list: who signed up, and who is on the waitlist ----------
+    r = join("'Student Org'", "'Student@Example.com'", **anon)
+    check('S5b setup: one of the students also joins the waitlist', r.returncode == 0, r.stderr)
+    J3 = json.loads(one('select public.admin_overview()', **ADM))
+    acc = J3.get('accounts_list', [])
+    order = ['student@example.com', 'kid2@example.com', OWNER, 'old@example.com']
+    by_email = {a['email']: a for a in acc}
+    check('S5b the accounts list has every account, newest first', [a['email'] for a in acc] == order, [a['email'] for a in acc])
+    check('S5b each account has a name, email, role, provider flag, joined time, last log in, quiz flag and waitlist school, and nothing else',
+          bool(acc) and all(set(a) == {'name', 'email', 'role', 'provider', 'created_at', 'last_login', 'quiz_done', 'wl_org'} for a in acc), [sorted(a) for a in acc][:1])
+    check('S5b the names come from the profiles', [by_email[e]['name'] for e in order] == ['Stu', 'Kid', 'Owner', 'Old'], by_email)
+    check('S5b role and provider come from the profile (only the second student is a provider)',
+          {e: (a['role'], a['provider']) for e, a in by_email.items()} == {'student@example.com': ('Student', False), 'kid2@example.com': ('Student', True), OWNER: ('Student', False), 'old@example.com': ('Student', False)}, by_email)
+    check('S5b quiz finished: yes for three, no for the one with no answers',
+          {e: a['quiz_done'] for e, a in by_email.items()} == {'student@example.com': True, 'kid2@example.com': True, OWNER: True, 'old@example.com': False}, by_email)
+    check('S5b last log in is there, and empty for the one who never logged in again', [by_email[e]['last_login'] is None for e in order] == [False, True, False, False], by_email)
+    check('S5b joined and last log in are real timestamps', all(re.match(r'^\d{4}-\d\d-\d\dT', a['created_at']) for a in acc) and re.match(r'^\d{4}-\d\d-\d\dT', by_email[OWNER]['last_login']) is not None, acc[:1])
+    check('S5b the student who joined the waitlist shows the school they typed, the others show none',
+          {e: a['wl_org'] for e, a in by_email.items()} == {'student@example.com': 'Student Org', 'kid2@example.com': None, OWNER: None, 'old@example.com': None}, by_email)
+    wl = {x['email']: x for x in J3['waitlist_rows']}
+    check('S5b and that waitlist entry says it has an account, while another one does not',
+          wl['student@example.com']['has_account'] is True and wl['teacher@school.org']['has_account'] is False, (wl.get('student@example.com'), wl.get('teacher@school.org')))
+    raw3 = json.dumps(J3)
+    check('S5b still no quiz answer text and no password hash anywhere in the result', 'secret words' not in raw3 and 'quiz_answers' not in raw3 and 'HASH-SECRET' not in raw3 and 'encrypted_password' not in raw3)
+    NP = user('meta@example.com', 0, 1, {'name': '  Meta Name ', 'role': 'Student', 'provider': True, 'org': 'Chess Club'})
+    J4 = json.loads(one('select public.admin_overview()', **ADM))
+    a5 = {a['email']: a for a in J4['accounts_list']}.get('meta@example.com', {})
+    check('S5b an account with no profile row yet takes its name, role and provider flag from what was typed at sign-up',
+          (a5.get('name'), a5.get('role'), a5.get('provider'), a5.get('quiz_done')) == ('Meta Name', 'Student', True, False), a5)
+    check('S5b and the account count and the list both grow by one', J4['accounts'] == 5 and len(J4['accounts_list']) == 5, (J4['accounts'], len(J4['accounts_list'])))
+    must(f"delete from auth.users where id = '{NP}'")
+    must("insert into auth.users (email, created_at) select 'bulk' || g || '@example.com', now() - interval '100 days' - g * interval '1 second' from generate_series(1, 600) g")
+    J5 = json.loads(one('select public.admin_overview()', **ADM))
+    check('S5b the list holds the newest 500, while the count is the real total (the newest accounts stay at the top)',
+          len(J5['accounts_list']) == 500 and J5['accounts'] == 604 and [a['email'] for a in J5['accounts_list']][:4] == order, (len(J5['accounts_list']), J5['accounts']))
+    must("delete from auth.users where email like 'bulk%@example.com'")
 
     # ---------- taking admin away, and deleting accounts ----------
     must(f"delete from public.admins where user_id = '{OWN}'")

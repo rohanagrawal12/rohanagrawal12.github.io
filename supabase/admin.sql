@@ -79,9 +79,10 @@ $$;
 revoke all on function public.is_admin() from public, anon;
 grant execute on function public.is_admin() to authenticated;
 
--- Everything the Admin page shows, in one go. It checks for itself that the caller is an admin, and it
--- hands back counts, never anyone's quiz answers, saved items or email (except the waitlist emails).
--- Days are counted in Houston time.
+-- Everything the Admin page shows, in one go. It checks for itself that the caller is an admin. It hands
+-- back counts, the waitlist, and a list of the newest 500 accounts (name, email, role, when they joined and
+-- last logged in, whether they finished the quiz, whether they are on the waitlist). It never hands back
+-- anyone's quiz answers, saved items or password. Days are counted in Houston time.
 create or replace function public.admin_overview()
 returns jsonb
 language plpgsql
@@ -120,9 +121,29 @@ begin
       from (select quiz_answers ->> 'grade' as name, count(*) as n from public.profiles
             where quiz_answers ->> 'grade' is not null group by 1 order by count(*) desc, 1 limit 9) t
     ),
+    'accounts_list', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'name', t.name, 'email', t.email, 'role', t.role, 'provider', t.provider,
+               'created_at', t.created_at, 'last_login', t.last_sign_in_at,
+               'quiz_done', t.quiz_done, 'wl_org', t.wl_org) order by t.created_at desc, t.id desc), '[]'::jsonb)
+      from (
+        select u.id, u.email, u.created_at, u.last_sign_in_at,
+               coalesce(nullif(btrim(p.name), ''), nullif(btrim(u.raw_user_meta_data ->> 'name'), '')) as name,
+               coalesce(p.role, nullif(u.raw_user_meta_data ->> 'role', '')) as role,
+               coalesce(p.is_provider, (u.raw_user_meta_data ->> 'provider') = 'true', false) as provider,
+               coalesce(p.quiz_answers is not null and p.quiz_answers <> '{}'::jsonb, false) as quiz_done,
+               (select l.org from public.waitlist l where lower(l.email) = lower(u.email)) as wl_org
+        from auth.users u
+        left join public.profiles p on p.id = u.id
+        order by u.created_at desc, u.id desc
+        limit 500
+      ) t
+    ),
     'waitlist_rows', (
-      select coalesce(jsonb_agg(jsonb_build_object('id', w.id, 'org', w.org, 'email', w.email, 'note', w.note, 'created_at', w.created_at) order by w.created_at desc, w.id desc), '[]'::jsonb)
-      from (select id, org, email, note, created_at from public.waitlist order by created_at desc, id desc limit 500) w
+      select coalesce(jsonb_agg(jsonb_build_object('id', w.id, 'org', w.org, 'email', w.email, 'note', w.note, 'created_at', w.created_at, 'has_account', w.has_account) order by w.created_at desc, w.id desc), '[]'::jsonb)
+      from (select l.id, l.org, l.email, l.note, l.created_at,
+                   exists (select 1 from auth.users u where lower(u.email) = lower(l.email)) as has_account
+            from public.waitlist l order by l.created_at desc, l.id desc limit 500) w
     )
   );
 end;
