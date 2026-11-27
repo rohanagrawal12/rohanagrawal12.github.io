@@ -286,16 +286,18 @@ try:
     check('S8 switching to log in keeps the typed email', pg.input_value('#a_email') == 'new@example.com', pg.input_value('#a_email'))
     ctx.close()
 
-    # confirm-email switched on
+    # confirm-email switched on: the person is asked for the code that was emailed (the whole flow is checked in test_verify.py)
     fake = Fake(); fake.confirm = True
     ctx, pg, errs = newpage(b, D, fake, APP0)
     pg.click('#full [data-act="signup"]'); w(pg)
     pg.fill('#a_name', 'Cy'); pg.fill('#a_email', 'cy@example.com'); pg.fill('#a_pw', PW); pg.click('[data-act="dosignup"]'); w(pg, 800)
-    check('S8 when email confirmation is on, the person is told to check email and sent to log in', pg.evaluate("S.stage") == 'login' and 'emailed you a link' in pg.locator('.inf').inner_text() and pg.input_value('#a_email') == 'cy@example.com', pg.locator('.box').inner_text()[:200])
+    check('S8 when email confirmation is on, the person is asked for the code that was emailed', pg.evaluate("S.stage") == 'verify' and 'Check your email' in pg.locator('#full').inner_text() and 'cy@example.com' in pg.locator('#full').inner_text(), pg.locator('#full').inner_text()[:200])
     check('S8 nothing logged in yet when confirmation is needed', pg.evaluate("S.me") is None and pg.evaluate("localStorage.getItem('bl.sb')") is None)
-    pg.fill('#a_pw', PW); pg.fill('#a_email', 'nobody@example.com'); pg.click('[data-act="dologin"]'); w(pg, 600)
-    check('S8 the notice stays while the person is still trying to log in', pg.locator('.inf').count() == 1 and pg.locator('.err').inner_text() == 'Email or password is incorrect.')
-    pg.click('[data-act="signup"]'); w(pg)
+    pg.click('#full [data-act="resend"]'); w(pg, 600)
+    check('S8 asking for a new code shows a notice on the code screen', pg.locator('.inf').count() == 1 and 'new code' in pg.locator('.inf').inner_text(), pg.locator('#full').inner_text()[:200])
+    pg.fill('#v_code', '12'); pg.click('[data-act="doverify"]'); w(pg, 400)
+    check('S8 the notice stays while the person is still trying the code', pg.locator('.inf').count() == 1 and pg.locator('.err').inner_text().startswith('Type the code'), pg.locator('.err').inner_text())
+    pg.click('[data-act="vchange"]'); w(pg)
     check('S8 the notice goes away when the screen changes', pg.locator('.inf').count() == 0)
     ctx.close()
 

@@ -26,7 +26,14 @@ class Fake:
         self.refresh = {}     # valid refresh token -> uid
         self.log = []         # {m, path, q, auth, body}
         self.violations = []
-        self.confirm = False  # "Confirm email" switched on
+        self.confirm = False  # "Confirm email" switched on: sign-up emails a code and no login comes back until it is verified
+        self.codes = {}       # email -> the code that was last emailed to it (only while the account is not confirmed)
+        self.emails = []      # every email the pretend project "sent", oldest first: (kind, email, code)
+        self.code_len = 6     # the project's "Email OTP Length" setting
+        self.code_old = set() # emails whose current code counts as expired
+        self.resend_wait = False  # answer /resend like the 60-second flood limit
+        self.verify_types = ('email', 'signup')   # the /verify types this project accepts; any other type gets 400 validation_failed
+        self.code_n = 0
         self.rpc = False      # delete_my_account installed
         self.reauth = False   # "Secure password change" on and the login is older than a day
         self.pw_changes = []  # emails whose password was changed through PUT /auth/v1/user
@@ -50,12 +57,21 @@ class Fake:
         meta = dict(meta) if meta else {'name': email.split('@')[0], 'role': 'Student', 'provider': False, 'org': ''}
         if not self.tour:
             meta.setdefault('toured', True)
-        self.users[email] = {'id': uid, 'pw': pw, 'meta': meta, 'created': time.time(), 'last': None}
+        self.users[email] = {'id': uid, 'pw': pw, 'meta': meta, 'created': time.time(), 'last': None, 'confirmed': True}
         self.by_id[uid] = email
         m = self.users[email]['meta']
         self.profiles[uid] = {'id': uid, 'name': m.get('name') or email.split('@')[0], 'role': m.get('role', 'Student'),
                               'is_provider': bool(m.get('provider')), 'org': m.get('org') or None, 'quiz_answers': None}
         return uid
+
+    def send_code(self, email, kind='signup'):
+        """Make a new code for an unconfirmed account and record the email. The old code stops working."""
+        self.code_n += 1
+        code = str((self.code_n * 7919 + 100003) % 10 ** self.code_len).zfill(self.code_len)
+        self.codes[email] = code
+        self.code_old.discard(email)
+        self.emails.append((kind, email, code))
+        return code
 
     def session(self, uid, ttl=None):
         self.n += 1
@@ -169,16 +185,27 @@ class Fake:
                 return out(400, {'code': 400, 'error_code': 'validation_failed', 'msg': 'Unable to validate email address: invalid format'})
             if len(pw) < self.min_pw:
                 return out(422, {'code': 422, 'error_code': 'weak_password', 'msg': f'Password should be at least {self.min_pw} characters.', 'weak_password': {'reasons': ['length']}})
-            if email in self.users:
-                return out(422, {'code': 422, 'error_code': 'user_already_exists', 'msg': 'User already registered'})
-            uid = str(uuid.uuid4())
             meta = dict(body.get('data') or {})
             if not self.tour:
                 meta.setdefault('toured', True)
-            self.users[email] = {'id': uid, 'pw': pw, 'meta': meta, 'created': time.time(), 'last': None if self.confirm else time.time()}
+            if email in self.users:
+                old = self.users[email]
+                if not self.confirm:
+                    return out(422, {'code': 422, 'error_code': 'user_already_exists', 'msg': 'User already registered'})
+                if old.get('confirmed', True):
+                    # like Supabase: an email that already has a confirmed account looks like a normal sign-up (nothing is sent, the identities list is empty)
+                    return out(200, {'id': str(uuid.uuid4()), 'email': email, 'user_metadata': meta, 'identities': []})
+                # an account that was never confirmed: the new password and details replace the old ones and a new code is sent
+                old['pw'] = pw
+                old['meta'].update(meta)
+                self.send_code(email)
+                return out(200, {'id': old['id'], 'email': email, 'user_metadata': old['meta'], 'identities': [{'provider': 'email'}]})
+            uid = str(uuid.uuid4())
+            self.users[email] = {'id': uid, 'pw': pw, 'meta': meta, 'created': time.time(), 'last': None if self.confirm else time.time(), 'confirmed': not self.confirm}
             self.by_id[uid] = email
             if self.confirm:
-                return out(200, {'id': uid, 'email': email, 'user_metadata': self.users[email]['meta']})
+                self.send_code(email)
+                return out(200, {'id': uid, 'email': email, 'user_metadata': self.users[email]['meta'], 'identities': [{'provider': 'email'}]})
             return out(200, self.session(uid))
         if path == '/auth/v1/token':
             if auth:
@@ -188,6 +215,8 @@ class Fake:
                 u2 = self.users.get(email)
                 if not u2 or u2['pw'] != body.get('password'):
                     return out(400, {'code': 400, 'error_code': 'invalid_credentials', 'msg': 'Invalid login credentials'})
+                if not u2.get('confirmed', True):
+                    return out(400, {'code': 400, 'error_code': 'email_not_confirmed', 'msg': 'Email not confirmed'})
                 u2['last'] = time.time()
                 return out(200, self.session(u2['id']))
             if q.get('grant_type') == 'refresh_token':
@@ -197,6 +226,29 @@ class Fake:
                     return out(400, {'code': 400, 'error_code': 'refresh_token_not_found', 'msg': 'Invalid Refresh Token: Refresh Token Not Found'})
                 return out(200, self.session(uid))
             return out(400, {'code': 400, 'error_code': 'validation_failed', 'msg': 'unsupported grant type'})
+        if path == '/auth/v1/verify' and request.method == 'POST':
+            if auth:
+                self.violations.append('verify must not carry an Authorization header')
+            if not isinstance(body, dict) or body.get('type') not in self.verify_types:
+                return out(400, {'code': 400, 'error_code': 'validation_failed', 'msg': 'Verify requires a verification type'})
+            email = (body.get('email') or '').lower()
+            u2 = self.users.get(email)
+            if not u2 or email in self.code_old or self.codes.get(email) is None or self.codes.get(email) != str(body.get('token') or ''):
+                return out(403, {'code': 403, 'error_code': 'otp_expired', 'msg': 'Token has expired or is invalid'})
+            u2['confirmed'] = True
+            u2['last'] = time.time()
+            self.codes.pop(email, None)
+            return out(200, self.session(u2['id']))
+        if path == '/auth/v1/resend' and request.method == 'POST':
+            if auth:
+                self.violations.append('resend must not carry an Authorization header')
+            if self.resend_wait:
+                return out(429, {'code': 429, 'error_code': 'over_email_send_rate_limit', 'msg': 'For security purposes, you can only request this after 60 seconds.'})
+            email = (body.get('email') or '').lower() if isinstance(body, dict) else ''
+            u2 = self.users.get(email)
+            if u2 and not u2.get('confirmed', True):
+                self.send_code(email, 'resend')
+            return out(200, {})
         if path == '/auth/v1/user' and request.method == 'PUT':
             # the call supabase-js makes for updateUser({password}); a bearer token is required
             expired = {'code': 401, 'error_code': 'bad_jwt', 'msg': 'invalid JWT: unable to parse or verify signature, token has invalid claims: token is expired'}

@@ -131,6 +131,7 @@ h1,h2,h3{font-family:inherit;letter-spacing:-.02em}h1,h2{font-weight:800}h3{font
 .tour-l{list-style:none;margin:0 0 10px;padding:0}.tour-l li{display:flex;gap:12px;padding:3px 0}.tour-l b{flex:none;width:108px}
 .tour-b{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.tour-b span{display:flex;gap:8px;margin-left:auto}
 .tour-hl{outline:3px solid var(--pin);outline-offset:3px}#bn.tour-hl{outline-offset:-3px}
+.vc{font-size:24px;letter-spacing:.3em;text-align:center}
 </style></head><body>
 <div id="full"></div>
 <noscript><section style="max-width:560px;margin:60px auto;padding:0 20px;font:16px/1.5 Inter,system-ui,sans-serif;color:#111113"><h1>Bulletin: Find your thing.</h1><p>Bulletin helps students find clubs, volunteering and programs that fit them. Answer a short quiz in your own words and every opportunity is ranked with a 1 to 10 match level.</p><p>It starts with the 98 clubs and teams at The Village School in Houston, Texas, plus Houston community programs and online programs open to students anywhere.</p><p>Bulletin needs JavaScript. Please turn it on in your browser settings.</p></section></noscript>
@@ -266,7 +267,7 @@ const pool=()=>results().filter(r=>avail(r.o));
 const SB_URL="https://urotelcllngtcctheelb.supabase.co",SB_KEY="sb_publishable_sQhpqrrzvwO1oyKf5loSCg_ezg0B8Uo",SBON=!!(SB_URL&&SB_KEY),KINDS=["saved","doing"];
 let SBS=SBON?get("bl.sb",null):null,INFO="",FORM={},AUTHBUSY=false,sbRun=false,sbAgain=false,sbTimer=0,sbFails=0,sbNeedPull=false,sbRefreshing=null,ADM=null,ADMBUSY=false,ADMERR="",ADMAT=0,ADMNO=false,ADMLIM=10,WLOK="",WLF={},WLFROM="intro";
 if(SBS)SBS.known=Object.assign({saved:[],doing:[]},SBS.known);
-const sbNet="Can’t reach the server. Check your internet and try again.",SBMSG={invalid_credentials:"Email or password is incorrect.",user_already_exists:"That email already has an account. Try logging in.",email_exists:"That email already has an account. Try logging in.",email_not_confirmed:"Confirm your email first, then log in.",over_request_rate_limit:"Too many tries right now. Wait a minute and try again.",over_email_send_rate_limit:"Too many tries right now. Wait a minute and try again.",signup_disabled:"New accounts are switched off right now.",same_password:"That’s already your password. Choose a different one.",reauthentication_needed:"For your safety, log out and log in again, then change your password."};
+const sbNet="Can’t reach the server. Check your internet and try again.",SBMSG={invalid_credentials:"Email or password is incorrect.",user_already_exists:"That email already has an account. Try logging in.",email_exists:"That email already has an account. Try logging in.",email_not_confirmed:"Confirm your email first, then log in.",otp_expired:"That code didn’t work. Check it, or ask for a new one below.",over_request_rate_limit:"Too many tries right now. Wait a minute and try again.",over_email_send_rate_limit:"Too many tries right now. Wait a minute and try again.",signup_disabled:"New accounts are switched off right now.",same_password:"That’s already your password. Choose a different one.",reauthentication_needed:"For your safety, log out and log in again, then change your password."};
 const sbSave=()=>{try{SBS?localStorage.setItem("bl.sb",JSON.stringify(SBS)):localStorage.removeItem("bl.sb")}catch(e){}};
 const sbIn=()=>!!(SBON&&SBS&&SBS.uid);
 const sbLocal=k=>{const m=k==="saved"?S.saved:S.mine;return new Set(Object.keys(m).filter(x=>m[x]))};
@@ -346,7 +347,7 @@ function sbEvents(){const again=()=>{if(!sbIn())return;if(sbNeedPull)sbSync();el
 /* leaving this account on this device: send anything not yet online first, and ask if that fails */
 async function sbLeave(q){if(sbPending()){await sbFlush();if(sbPending()&&!confirm("Some changes haven’t reached your account yet. Continue anyway?"))return false}return q?confirm(q):true}
 function authMsg(m){S.err=m;const e=document.querySelector("#full .err");if(e){e.textContent=m;e.scrollIntoView({block:"nearest"})}else render()}
-function authBusy(on){if(on&&AUTHBUSY)return true;AUTHBUSY=on;const b=document.querySelector('#full [data-act="dologin"],#full [data-act="dosignup"],#full [data-act="dochpw"],#full [data-act="dowl"]');if(b){if(on){b.dataset.t=b.textContent;b.textContent="Please wait…"}else if(b.dataset.t)b.textContent=b.dataset.t;b.disabled=on}return false}
+function authBusy(on){if(on&&AUTHBUSY)return true;AUTHBUSY=on;const b=document.querySelector('#full [data-act="dologin"],#full [data-act="dosignup"],#full [data-act="dochpw"],#full [data-act="dowl"],#full [data-act="doverify"]');if(b){if(on){b.dataset.t=b.textContent;b.textContent="Please wait…"}else if(b.dataset.t)b.textContent=b.dataset.t;b.disabled=on}return false}
 const formSnap=()=>({name:val("a_name"),email:val("a_email")});
 const privNote=()=>sbIn()?"Your answers are saved to your account so they follow you to your other devices. They’re used to rank opportunities for you.":SBON?"Your answers stay on this device. If you create an account, they’re saved to it.":"Your answers stay on this device. They’re used to rank opportunities here, not sent to a server.";
 const go=(t,x)=>{if(t!==S.tab){S.cat="All";S.lim=8}S.tab=t;S.err="";Object.assign(S,x||{});render();scrollTo(0,0)};
@@ -366,6 +367,9 @@ function topics(){const c=new Map(),skip=new Set(["service hours","volunteering"
 function searchView(){const qr=terms(S.q),ql=S.q.toLowerCase();let rows=pool().filter(r=>!S.mine[r.o.id]).map(r=>{let s=0;for(const [st] of qr){const w=r.o.idx.get(st);if(w)s+=w*idf(st)}if((r.o.name+" "+r.o.tags.join(" ")).toLowerCase().includes(ql))s+=4;if((r.o.description+" "+r.o.category).toLowerCase().includes(ql))s+=2;return{...r,s}}).filter(r=>r.s>0).sort((a,b)=>b.s-a.s||b.score-a.score);
  const by=sc=>rows.filter(r=>r.o.scope===sc);return`<h1>Results for “${esc(S.q)}”</h1><p class="mut">${rows.length} opportunities across all three tabs: ${by("School").length} School, ${by("Community").length} Community, ${by("Explore").length} Explore.</p>${["School","Community","Explore"].map(sc=>by(sc).length?`<h2>${sc} (${by(sc).length})</h2>${cards(by(sc))}`:"").join("")||`<div class="empty">No matches. Try a broader word like “science” or “art”.</div>`}`}
 function authView(m){const L=m==="Login";return`<section class="box"><h1>${L?"Welcome back":"Create your account"}</h1><p class="mut">${L?"Log in to "+BRAND+".":"Free for students. No payment details needed."}</p>${INFO?`<div class="inf" role="status">${esc(INFO)}</div>`:""}<form id="af" novalidate>${L?"":`<div class="q"><label class="ql" for="a_name">Full name</label><input type="text" id="a_name" autocomplete="name" value="${esc(FORM.name)}"></div>`}<div class="q"><label class="ql" for="a_email">Email</label><input type="email" id="a_email" autocomplete="email" autocapitalize="none" spellcheck="false" value="${esc(FORM.email)}"></div><div class="q"><label class="ql" for="a_pw">Password</label><input type="password" id="a_pw" autocomplete="${L?"current-password":"new-password"}"></div>${L?"":`<div class="q"><label class="ql">Who is this account for?</label>${ROLES.map(([v,l,d],i)=>`<label class="role"><input type="radio" name="a_who" value="${v}"${i?"":" checked"}><span><b>${l}</b><small>${d}</small></span></label>`).join("")}</div><div class="q orgq"><label class="ql" for="a_org">Organization name</label><input type="text" id="a_org" autocomplete="organization"></div>`}<div class="err" role="alert">${esc(S.err)}</div><button class="btn pri big" data-act="${L?"dologin":"dosignup"}" style="width:100%">${L?"Log in":"Create account"}</button></form><p class="mut">${L?`New here? <a href="#" data-act="signup">Create an account</a>`:`Have an account? <a href="#" data-act="login">Log in</a>`}</p><p class="meta mut">${SBON?"Your name, email, quiz answers and saved items are stored in your account. Friends and messages are saved on this device only for now.":"Prototype: accounts, friends and messages are saved on this device until a shared database is connected."}</p></section>`}
+// the email-code step. It only shows when the project asks new accounts to confirm their email: the project has emailed a code to S.vmail
+// (kept in the saved state so a reload, or a trip to the mail app and back, does not lose it) and nothing is created until it is typed here.
+const verView=()=>`<section class="box"><h1>Check your email</h1><p class="mut">We sent a code to <b>${esc(S.vmail)}</b>. Type it below to finish creating your account.</p>${INFO?`<div class="inf" role="status">${esc(INFO)}</div>`:""}<form id="af" novalidate><div class="q"><label class="ql" for="v_code">Code from the email</label><input type="text" id="v_code" class="vc" inputmode="numeric" autocomplete="one-time-code" maxlength="12" autocapitalize="none" spellcheck="false"></div><div class="err" role="alert">${esc(S.err)}</div><button class="btn pri big" data-act="doverify" style="width:100%">Confirm email</button></form><p class="mut">Nothing yet? Check your spam folder, or <a href="#" data-act="resend">send a new code</a>.</p><p class="mut">Wrong address? <a href="#" data-act="vchange">Use a different email</a></p></section>`;
 let PWOK=false;
 const pwView=()=>PWOK?`<section class="box"><h1>Password changed</h1><p class="mut">Use your new password with <b>${esc(SBS&&SBS.email)}</b> the next time you log in, on this device or any other.</p><button class="btn pri big" data-act="back2" style="width:100%">Done</button></section>`:`<section class="box"><h1>Change your password</h1><p class="mut">Choose a password you’ll remember. Use it with <b>${esc(SBS&&SBS.email)}</b> to log in on your other devices.</p><form id="af" novalidate><input type="email" autocomplete="username" value="${esc(SBS&&SBS.email)}" readonly hidden tabindex="-1" aria-hidden="true"><div class="q"><label class="ql" for="p_new">New password</label><input type="password" id="p_new" autocomplete="new-password"></div><div class="q"><label class="ql" for="p_new2">New password again</label><input type="password" id="p_new2" autocomplete="new-password"></div><div class="q" style="margin:-18px 0 6px"><button type="button" class="lk u" data-act="showpw">Show passwords</button></div><div class="err" role="alert">${esc(S.err)}</div><button class="btn pri big" data-act="dochpw" style="width:100%">Change password</button></form></section><button class="lk" data-act="back2">‹ Back</button>`;
 /* the school waitlist: the one thing a guest can send. It calls a database function that only adds a row, with the publishable key and no login. */
@@ -426,7 +430,7 @@ const loadStage=()=>`<section class="fs"><div class="ico">${ART3.replace(/fill="
 // draws one page of the quiz. There is no skip: the left button always goes back.
 function quizStage(){const p=PAGES[S.step],n=PAGES.length,w=who();
  return`<section class="fs left"><div class="qh"><span class="wm2">${WORD}</span><span class="mut">${S.step+1} of ${n}</span></div><div class="segp">${PAGES.map((_,i)=>`<i class="${i<=S.step?"on":""}"></i>`).join("")}</div><div class="eyebrow">INTEREST QUIZ: TELL US ABOUT ${w?w.toUpperCase():"YOU"}</div><h1>${qt(p,"title","tp")}</h1><p class="mut">There are no wrong answers.</p>${p.intro?`<p class="mut">${qt(p,"intro","ip")}</p>`:""}${p.q.map(field).join("")}<div class="err">${esc(S.err)}</div><div class="qf"><button class="btn" data-act="${S.step?"back":"qback"}">‹ Back</button><button class="btn pri" data-act="next">${S.step===n-1?"See my matches →":"Next →"}</button></div><p class="note">${privNote()}</p></section>`}
-function stageView(){const g=S.stage;return g==="intro"?slideView():g==="auth"?authStage():g==="login"||g==="signup"?`<section class="fs">${authView(g==="login"?"Login":"Signup")}<button class="lk" data-act="back2">‹ Back</button></section>`:g==="chpw"?`<section class="fs">${pwView()}</section>`:g==="waitlist"?`<section class="fs">${wlView()}</section>`:g==="prompt"?promptStage():g==="quiz"?quizStage():g==="loading"?loadStage():""}
+function stageView(){const g=S.stage;return g==="intro"?slideView():g==="auth"?authStage():g==="login"||g==="signup"?`<section class="fs">${authView(g==="login"?"Login":"Signup")}<button class="lk" data-act="back2">‹ Back</button></section>`:g==="verify"?`<section class="fs">${verView()}<button class="lk" data-act="back2">‹ Back</button></section>`:g==="chpw"?`<section class="fs">${pwView()}</section>`:g==="waitlist"?`<section class="fs">${wlView()}</section>`:g==="prompt"?promptStage():g==="quiz"?quizStage():g==="loading"?loadStage():""}
 function runLoad(){let p=4;const t=setInterval(()=>{if(S.stage!=="loading"){clearInterval(t);return}p=Math.min(100,p+6+Math.random()*12);const b=$("pb");if(b){b.style.width=p+"%";$("pp").textContent=Math.round(p)+"%"}if(p>=100){clearInterval(t);S.stage="app";go("Home")}},140)}
 /* ---------- app views ---------- */
 // the ranked opportunities in one tab (School, Community or Explore), for this person
@@ -619,7 +623,11 @@ async function act(a,d){
   if(prov&&org.length<2){authMsg("Enter the name of your organization.");return}
   if(SBON){if(authBusy(true))return;const r=await sbRaw("/auth/v1/signup",{method:"POST",body:{email:e,password:pw,data:{name:n,role,provider:prov,org:prov?org:""}}});
    if(!r.ok||!r.j||!(r.j.user||r.j.id)){authBusy(false);authMsg(sbErr(r));return}
-   if(!r.j.access_token){authBusy(false);FORM={email:e};INFO="Almost done. We emailed you a link. Open it to confirm your email, then log in here.";F({stage:"login",err:""});return}
+   // no login came back: the project wants the email confirmed first. An email that already belongs to a confirmed account comes back with an empty
+   // identities list (Supabase never says so outright); otherwise a code was just emailed and the next step is to type it.
+   if(!r.j.access_token){authBusy(false);const ids=(r.j.user||r.j).identities;
+    if(Array.isArray(ids)&&!ids.length){authMsg(SBMSG.user_already_exists);return}
+    FORM={name:n,email:e};S.vmail=e;F({stage:"verify",err:""});return}
    // a new account starts empty: nothing is matched until its owner takes the quiz (the app sends them to the quiz step by itself)
    S.ans={};S.done=false;ck="";
    sbBegin(r.j);await sbPull();authBusy(false);FORM={};F({stage:"app",tab:"Home",err:""});return}
@@ -628,10 +636,29 @@ async function act(a,d){
  else if(a==="dologin"){const e=val("a_email").trim().toLowerCase(),pw=val("a_pw");
   if(SBON){if(!/.+@.+\..+/.test(e)||!pw){authMsg("Enter your email and password.");return}
    if(authBusy(true))return;const r=await sbRaw("/auth/v1/token?grant_type=password",{method:"POST",body:{email:e,password:pw}});
+   // the account exists but its email was never confirmed: go to the code step, where a new code can be asked for
+   if(r.j&&r.j.error_code==="email_not_confirmed"){authBusy(false);S.vmail=e;FORM={email:e};INFO="Your email isn’t confirmed yet. Type the code we emailed you, or ask for a new one.";F({stage:"verify",err:""});return}
    if(!r.ok||!r.j||!r.j.access_token||!r.j.user){authBusy(false);authMsg(sbErr(r));return}
    sbBegin(r.j);const adm=(await Promise.all([sbPull(),sbAdminCheck()]))[1];authBusy(false);FORM={};F({stage:"app",tab:adm?"Admin":"Home",err:""});return}
   const u=users[e];if(!u||u.pw!==await sha(pw)){authMsg("Email or password is incorrect.");return}S.me=e;S.ans=u.ans||{};S.done=!!u.ans;ck="";F({stage:"app",tab:"Home"})}
  else if(a==="logout"){if(sbIn()){if(!await sbLeave())return;sbOut()}S.ans={};S.done=false;ck="";F({me:null,stage:"auth",tab:"Home"})}
+ // the email code: Confirm email checks the code and logs the person in, send a new code asks for another email, Use a different email goes back to the sign-up form
+ else if(a==="doverify"){const code=val("v_code").replace(/\D/g,"");
+  if(!S.vmail||!SBON){F({stage:"auth",err:""});return}
+  if(code.length<6||code.length>10){authMsg("Type the code from the email. It’s made of numbers only.");return}
+  if(authBusy(true))return;
+  // the code from the sign-up email is checked with type "email" (what Supabase's docs show); if the project does not accept that type (400 or 422) the older name "signup" is tried once
+  let r=await sbRaw("/auth/v1/verify",{method:"POST",body:{type:"email",email:S.vmail,token:code}});
+  if(r.status===400||r.status===422)r=await sbRaw("/auth/v1/verify",{method:"POST",body:{type:"signup",email:S.vmail,token:code}});
+  authBusy(false);
+  if(S.stage!=="verify")return;
+  if(!r.ok||!r.j||!r.j.access_token||!r.j.user){authMsg(r.net||!r.status?sbNet:r.status===429?SBMSG.over_request_rate_limit:r.status>=500?"Something went wrong. Please try again.":SBMSG.otp_expired);return}
+  // the email is confirmed and the project handed back a login. A brand new account starts empty; the app then sends it to the quiz step by itself.
+  S.ans={};S.done=false;ck="";S.vmail="";sbBegin(r.j);await sbPull();FORM={};F({stage:"app",tab:"Home",err:""})}
+ else if(a==="resend"){if(!S.vmail||!SBON)return;const r=await sbRaw("/auth/v1/resend",{method:"POST",body:{type:"signup",email:S.vmail}});
+  if(S.stage!=="verify")return;if(!r.ok){authMsg(sbErr(r));return}
+  INFO="We sent a new code to "+S.vmail+". The old one no longer works.";S.err="";render()}
+ else if(a==="vchange"){FORM={name:(FORM&&FORM.name)||"",email:S.vmail};S.vmail="";F({stage:"signup",err:""})}
  else if(a==="chpw"){if(!sbIn())return;PWOK=false;F({stage:"chpw",err:""})}
  else if(a==="showpw"){const f=$("p_new");if(!f)return;const on=f.type==="password";["p_new","p_new2"].forEach(i=>{const x=$(i);if(x)x.type=on?"text":"password"});const b=document.querySelector('#full [data-act="showpw"]');if(b){b.textContent=on?"Hide passwords":"Show passwords"}}
  else if(a==="dochpw"){const p1=val("p_new"),p2=val("p_new2");if(!sbIn())return;
@@ -689,7 +716,7 @@ function hSync(){if(S.stage==="loading")return;const v=hv(),k=hk(v);
  if(!hKey){hKey=k;hLast=v;hPut(false);return}
  if(k===hKey){hLast=v;clearTimeout(hTimer);hTimer=setTimeout(()=>hPut(false),300);return}
  clearTimeout(hTimer);hPut(false);hDepth++;hKey=k;hLast=v;hY=0;hPut(true)}
-const fixStage=()=>{if(S.stage==="loading"||(S.stage==="chpw"&&!sbIn()))S.stage="app";else if(S.stage==="waitlist"&&!SBON)S.stage=S.seen?"app":"intro";else if((S.stage==="login"||S.stage==="signup")&&me())S.stage="app"};
+const fixStage=()=>{if(S.stage==="loading"||(S.stage==="chpw"&&!sbIn()))S.stage="app";else if(S.stage==="waitlist"&&!SBON)S.stage=S.seen?"app":"intro";else if((S.stage==="login"||S.stage==="signup")&&me())S.stage="app";else if(S.stage==="verify"&&(!S.vmail||!SBON||me()))S.stage=me()?"app":"auth"};
 function hInit(){try{history.scrollRestoration="manual"}catch(e){}const s=history.state;if(s&&s.bl&&s.v){Object.assign(S,s.v);fixStage();hDepth=s.i||0;hLast=hv();hKey=hk(hLast);hY=s.y||0}}
 // goes back one step using the browser history. If nothing moved within 0.4 seconds, history.back() did not work, so run the fallback instead.
 // (It checks that no history move happened at all, not that the page looks the same: someone who taps Back and then Next quickly is back on the same page.)
