@@ -30,6 +30,8 @@ class Fake:
         self.rpc = False      # delete_my_account installed
         self.reauth = False   # "Secure password change" on and the login is older than a day
         self.pw_changes = []  # emails whose password was changed through PUT /auth/v1/user
+        self.meta_puts = []   # (email, data) for every PUT /auth/v1/user that carried user data, such as {'toured': True}
+        self.tour = False     # False: every account already has 'toured' in its user data, so the first-login tour never interrupts the other suites. test_tour.py sets True.
         self.fail = None      # None | 'net' | '500' | '429'
         self.min_pw = 6
         self.ttl = 3600
@@ -45,7 +47,10 @@ class Fake:
     # ---- helpers the tests use to set things up ----
     def add_user(self, email, pw='secret1', meta=None):
         uid = str(uuid.uuid4())
-        self.users[email] = {'id': uid, 'pw': pw, 'meta': meta or {'name': email.split('@')[0], 'role': 'Student', 'provider': False, 'org': ''}, 'created': time.time(), 'last': None}
+        meta = dict(meta) if meta else {'name': email.split('@')[0], 'role': 'Student', 'provider': False, 'org': ''}
+        if not self.tour:
+            meta.setdefault('toured', True)
+        self.users[email] = {'id': uid, 'pw': pw, 'meta': meta, 'created': time.time(), 'last': None}
         self.by_id[uid] = email
         m = self.users[email]['meta']
         self.profiles[uid] = {'id': uid, 'name': m.get('name') or email.split('@')[0], 'role': m.get('role', 'Student'),
@@ -167,7 +172,10 @@ class Fake:
             if email in self.users:
                 return out(422, {'code': 422, 'error_code': 'user_already_exists', 'msg': 'User already registered'})
             uid = str(uuid.uuid4())
-            self.users[email] = {'id': uid, 'pw': pw, 'meta': body.get('data') or {}, 'created': time.time(), 'last': None if self.confirm else time.time()}
+            meta = dict(body.get('data') or {})
+            if not self.tour:
+                meta.setdefault('toured', True)
+            self.users[email] = {'id': uid, 'pw': pw, 'meta': meta, 'created': time.time(), 'last': None if self.confirm else time.time()}
             self.by_id[uid] = email
             if self.confirm:
                 return out(200, {'id': uid, 'email': email, 'user_metadata': self.users[email]['meta']})
@@ -203,6 +211,14 @@ class Fake:
             uid = info[0]
             em = self.by_id[uid]
             pw = body.get('password') if isinstance(body, dict) else None
+            data = body.get('data') if isinstance(body, dict) else None
+            if pw is None and data is not None:
+                # updateUser({data}): the keys are merged into the user's metadata and nothing else changes
+                if not isinstance(data, dict):
+                    return out(422, {'code': 422, 'error_code': 'validation_failed', 'msg': 'data must be an object'})
+                self.users[em]['meta'].update(data)
+                self.meta_puts.append((em, dict(data)))
+                return out(200, {'id': uid, 'email': em, 'user_metadata': self.users[em]['meta'], 'updated_at': '2026-11-26T12:00:00Z'})
             if self.reauth:
                 return out(400, {'code': 400, 'error_code': 'reauthentication_needed', 'msg': 'Password update requires reauthentication'})
             if not isinstance(pw, str) or len(pw) < self.min_pw:

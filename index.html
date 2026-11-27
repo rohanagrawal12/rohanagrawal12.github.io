@@ -122,6 +122,15 @@ h1,h2,h3{font-family:inherit;letter-spacing:-.02em}h1,h2{font-weight:800}h3{font
 /* five tabs have to fit: tighter tabs on narrow screens, and the welcome buttons stay on screen */
 @media(max-width:950px){#nav button{padding:8px 7px;font-size:14px}}
 .sl2 .bb{position:sticky;bottom:0;padding:12px 0 calc(12px + env(safe-area-inset-bottom,0px));margin-top:auto}.sl2.y .bb{background:#F3F3F4}.sl2.k .bb{background:#0C0C0E}.sl2.r .bb{background:#2A2A2E}
+/* first-login tour: a small card, and a red ring around the thing it points at */
+:root{--pin:#D6452F}
+.tour{position:fixed;z-index:60;box-sizing:border-box;max-height:calc(100vh - 24px);overflow:auto;background:var(--card);color:var(--ink);border:2px solid var(--ink);border-radius:8px;padding:16px 18px 14px;box-shadow:0 10px 30px rgba(0,0,0,.22)}
+.tour-n{font-size:12px;font-weight:800;letter-spacing:.14em;color:var(--mut);text-transform:uppercase}
+.tour h2{margin:4px 0 6px;font-size:19px;line-height:1.25}
+#tour-x{font-size:15px;line-height:1.45}
+.tour-l{list-style:none;margin:0 0 10px;padding:0}.tour-l li{display:flex;gap:12px;padding:3px 0}.tour-l b{flex:none;width:108px}
+.tour-b{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:14px}.tour-b span{display:flex;gap:8px;margin-left:auto}
+.tour-hl{outline:3px solid var(--pin);outline-offset:3px}#bn.tour-hl{outline-offset:-3px}
 </style></head><body>
 <div id="full"></div>
 <noscript><section style="max-width:560px;margin:60px auto;padding:0 20px;font:16px/1.5 Inter,system-ui,sans-serif;color:#111113"><h1>Bulletin: Find your thing.</h1><p>Bulletin helps students find clubs, volunteering and programs that fit them. Answer a short quiz in your own words and every opportunity is ranked with a 1 to 10 match level.</p><p>It starts with the 98 clubs and teams at The Village School in Houston, Texas, plus Houston community programs and online programs open to students anywhere.</p><p>Bulletin needs JavaScript. Please turn it on in your browser settings.</p></section></noscript>
@@ -287,7 +296,9 @@ function sbOut(){const t=SBS&&SBS.access;if(t)sbRaw("/auth/v1/logout?scope=local
 function sbBegin(j){const u=j.user,m=u.user_metadata||{},e=String(u.email||"").toLowerCase();
  if(SBS&&SBS.uid&&SBS.uid!==u.id)sbWipe();
  SBS={uid:u.id,email:e,access:j.access_token,refresh:j.refresh_token,exp:j.expires_at||Math.floor(Date.now()/1000)+(j.expires_in||3600),known:{saved:[],doing:[]},dirty:false,meta:{name:m.name,role:m.role,provider:!!m.provider,org:m.org}};sbSave();
- const x=users[e]=Object.assign(users[e]||{friends:[]},{name:m.name||e.split("@")[0],email:e,role:m.role||"Student",provider:!!m.provider,org:m.org||"",sb:1});delete x.pw;delete x.ans;S.me=e}
+ const x=users[e]=Object.assign(users[e]||{friends:[]},{name:m.name||e.split("@")[0],email:e,role:m.role||"Student",provider:!!m.provider,org:m.org||"",sb:1,toured:!!(m.toured||(users[e]&&users[e].toured))});delete x.pw;delete x.ans;S.me=e;
+ // this device knows the tour was seen but the account does not (an earlier send failed): tell the account now
+ if(x.toured&&!m.toured)tourSync()}
 /* bring this device and the account together: what is online plus what was added here, minus what was removed here */
 async function sbPull(){if(!sbIn())return false;
  const uid=SBS.uid,[pr,ar]=await Promise.all([sbReq("/rest/v1/profiles?id=eq."+uid+"&select=name,role,is_provider,org,quiz_answers"),sbReq("/rest/v1/activity?select=opp_id,kind")]);
@@ -489,16 +500,98 @@ function homeView(){
   guest=u?"":`<section class="qb"><div><b>You’re using ${BRAND} as a guest</b><span>Create a free account to keep your matches and saved items on every device.</span></div><button class="btn pri" data-act="signup">Create account</button></section>`,
   zip=!S.done||S.ans.zip?"":`<section class="qb"><div><b>Add your ZIP code</b><span>We use it to show opportunities near ${w||"you"}. It stays private.</span></div><div class="zr"><input type="text" id="z_in" inputmode="numeric" autocomplete="postal-code" maxlength="5" placeholder="77095" aria-label="ZIP code"><button class="btn pri" data-act="setzip">Save</button></div></section><div class="err" role="alert">${esc(S.err)}</div>`;
  return head+`<p class="mut">${w?`Here’s what we found for ${w}.`:"Here’s a summary of your matches and your activity."}</p>${admin}${loading}${guest}${zip}${quizBanner()}<div class="hts">${tile(cnt(S.saved),"Saved","saved")}${tile(cnt(S.mine),"I’m doing","doing")}${u?tile(inbox,"Messages","inbox")+tile(friends,"Friends","friends"):""}</div><h2>Your top matches</h2>${hsec("School","At your school",sch)}${hsec("Community","Near you",com)}${hsec("Explore","Online and national","")}<div class="hcols"><section><h2>Coming up</h2>${dates.map(r=>`<div class="hr"><div class="hn"><button class="lk hl" data-act="viewopp" data-id="${r.o.id}">${esc(r.o.name)}</button><div class="meta">${esc(cut(r.o.key_dates,90))}</div></div></div>`).join("")||`<div class="empty">No dates yet.</div>`}</section><section><h2>Saved</h2>${saved.length?saved.slice(0,3).map(hrow).join(""):`<div class="empty">Nothing saved yet. Tap the bookmark on anything you like.</div>`}${saved.length>3?`<button class="lk" data-act="goseg" data-v="saved">See all saved →</button>`:""}</section></div>`}
+/* ---------- first-login tour: a small card that points at one part of Home at a time ---------- */
+// which step the tour is on (0 is the first). null means no tour is showing. It is kept in memory only, so reloading the page in the middle starts it again until it is finished or skipped.
+let TOUR=null;
+// true when this person has already seen (or skipped) the tour. An account remembers it on this device and online; a guest remembers it in S.toured.
+const toured=()=>{const u=me();return u?!!u.toured:!!S.toured};
+// true when the tour should start now: the person is on Home, inside the app, their account data has loaded and they have not seen the tour yet
+const tourDue=()=>S.stage==="app"&&S.tab==="Home"&&!sbNeedPull&&!toured();
+// the first thing on the page that matches a selector and is really on screen (things that are hidden, like the bottom bar on a computer, are skipped)
+const showing=q=>[...document.querySelectorAll(q)].find(x=>x.getClientRects().length)||null;
+// the steps for this person. Each has a title (t), some words (x) and a function (el) that finds what to point at. No function means the card just sits at the bottom.
+function tourSteps(){
+ const u=me(),w=who(),org=isOrg(),first=u?String(u.name||"").split(" ")[0]:"",hi=first?", "+esc(first):"",my=w?w+"’s":"your",st=[];
+ // 1. a welcome that says what this page is (parents and teachers are told the matches are for their child or student)
+ st.push({t:`Welcome to ${BRAND}${hi}.`,x:org?`You post opportunities for students to find. Here’s a quick look at where everything is. It takes about a minute.`:`This is your Home. ${w?`Everything here is matched to ${w}’s answers. `:""}Here’s a quick look at where everything is. It takes about a minute.`});
+ // 2. guests only: the card that offers a free account
+ if(!u)st.push({t:"Make a free account",x:`You’re using ${BRAND} as a guest. An account keeps your matches and saved items on every device.`,el:()=>{const b=showing('#main [data-act="signup"]');return b&&b.closest(".qb")}});
+ // 3. the tabs: along the top on a computer, along the bottom on a phone
+ st.push({t:"The tabs",x:org?`School, Community and Explore show what students see. My Activities is where you post, and where your messages and friends are. Tap the ${BRAND} logo any time to come back to Home.`:`<ul class="tour-l"><li><b>Home</b><span>This page</span></li><li><b>School</b><span>Clubs at ${my} school</span></li><li><b>Community</b><span>Programs around Houston</span></li><li><b>Explore</b><span>Online and national programs</span></li><li><b>My Activities</b><span>What you saved and are doing</span></li></ul>Tap the ${BRAND} logo any time to come back to Home.`,el:()=>showing("#nav")||showing("#bn")});
+ // 4. the count boxes
+ st.push({t:org?"Your numbers":"Your counts",x:org?`These boxes count your listings, the ones waiting for review, and your messages and friends. Tap one to open it.`:`These boxes count what you’ve saved and what you’re doing. Tap one to open that list.`,el:()=>showing("#main .hts")});
+ // 5. organizers: the Post button. Everyone else: the matches and the bookmark
+ if(org)st.push({t:"Post an opportunity",x:`Tap here to post a club, program or event. New posts show as Pending review until they’re approved.`,el:()=>showing("#main .hp1 .btn")});
+ else{
+  st.push({t:"Your top matches",x:S.done?`Each row has a match level from 1 to 10 for ${w||"you"}. A higher number is a better fit. Tap a name to read more.`:`These are the best of what’s in ${BRAND}. Take the quiz and we’ll sort them for ${w||"you"}.`,el:()=>showing("#main .hs .hr")});
+  st.push({t:"Save what you like",x:`Tap the bookmark on any row to save it. Saved items show up on Home and in My Activities.`,el:()=>showing("#main .hs .bm")})}
+ // 6. search, then the Admin button (admins only), then Settings
+ st.push({t:"Search",x:`Looking for something specific? Type a club or an interest here.`,el:()=>showing("#q")});
+ if(sbAdmin())st.push({t:"Admin",x:`Only you can see this. It shows sign-ups, the waitlist and everyone who has an account.`,el:()=>showing("#hadm")});
+ st.push({t:"Settings",x:`Change how ${BRAND} looks${org?"":", retake the quiz"}${u?" or log out":" or create an account"}. You can replay this tour from here any time.`,el:()=>showing(".gb")});
+ // keep only the steps whose target is on screen right now (a step with no target, like the welcome, always stays)
+ return st.filter(z=>!z.el||z.el())}
+// the words and buttons inside the card for step i (the first step says Start, the last says Done)
+function tourCard(st,i){
+ const z=st[i],last=i===st.length-1;
+ return`<div class="tour-n">${i+1} of ${st.length}</div><h2 id="tour-t">${z.t}</h2><div id="tour-x">${z.x}</div><div class="tour-b">${last?"":`<button class="lk" data-act="tourskip">Skip tour</button>`}<span>${i?`<button class="btn" data-act="tourback">Back</button>`:""}<button class="btn pri" data-act="${last?"tourdone":"tournext"}">${last?"Done":i?"Next":"Start"}</button></span></div>`}
+// puts the card where it will not cover what it points at: under the header for things in the header, and just above the bottom bar (or the bottom of the screen) for everything else
+function tourPlace(c,el){
+ const vw=document.documentElement.clientWidth,vh=innerHeight,w=Math.min(420,vw-24),hd=document.querySelector(".hd").getBoundingClientRect().bottom,bn=showing("#bn");
+ c.style.width=w+"px";
+ const h=c.offsetHeight;
+ let left=(vw-w)/2,top=(bn?bn.getBoundingClientRect().top:vh)-h-12;
+ if(el){
+  // hit(t) is true when a card whose top edge is at t would sit on top of the thing being pointed at
+  const r=el.getBoundingClientRect(),hit=t=>r.bottom>t&&r.top<t+h;
+  if(r.bottom<=hd+2){top=hd+12;left=Math.min(Math.max(r.left+r.width/2-w/2,12),vw-w-12)}
+  else if(hit(top)&&!hit(hd+12))top=hd+12}
+ c.style.left=left+"px";c.style.top=Math.max(top,hd+8)+"px"}
+// scrolls the page so the thing being pointed at sits just under the header (things in the header or the bottom bar never move, so they are left alone)
+function tourScroll(el){
+ if(!$("main").contains(el))return;
+ scrollBy(0,el.getBoundingClientRect().top-document.querySelector(".hd").getBoundingClientRect().bottom-16)}
+// runs after every render: starts the tour when it is due, draws the card and the red ring, and ends the tour if the person has left Home
+function tourDraw(){
+ // take the ring off whatever had it (the page was just rebuilt, so it is put back below)
+ document.querySelectorAll(".tour-hl").forEach(x=>x.classList.remove("tour-hl"));
+ let c=$("tour");
+ if(TOUR===null&&tourDue())TOUR=0;
+ // the tour belongs to Home: going to another page counts as finishing it
+ if(TOUR!==null&&!(S.stage==="app"&&S.tab==="Home")){tourEnd();return}
+ if(TOUR===null){if(c)c.remove();return}
+ const st=tourSteps();
+ // nothing to point at (should not happen): give up quietly
+ if(st.length<2){TOUR=null;if(c)c.remove();return}
+ TOUR=Math.min(TOUR,st.length-1);
+ const z=st[TOUR],el=z.el?z.el():null;
+ if(!c){c=document.createElement("div");c.id="tour";c.className="tour";c.setAttribute("role","dialog");c.setAttribute("aria-labelledby","tour-t");c.setAttribute("aria-describedby","tour-x");document.body.appendChild(c)}
+ // rewrite the card only when the step changed, so a redraw does not take the focus away from its buttons
+ const fresh=c.dataset.s!==String(TOUR);
+ if(fresh){c.innerHTML=tourCard(st,TOUR);c.dataset.s=TOUR;if(el)tourScroll(el);else scrollTo(0,0)}
+ if(el)el.classList.add("tour-hl");
+ tourPlace(c,el);
+ if(fresh){const b=c.querySelector(".btn.pri");if(b)b.focus({preventScroll:true})}}
+// stops the tour, takes the card and the ring off the page, and remembers that this person has seen it
+function tourEnd(){
+ TOUR=null;
+ const c=$("tour");if(c)c.remove();
+ document.querySelectorAll(".tour-hl").forEach(x=>x.classList.remove("tour-hl"));
+ const u=me();
+ if(u){if(!u.toured){u.toured=true;if(sbIn())tourSync()}}else S.toured=true;
+ save()}
+// tells the online account the tour was seen, so it does not show again on the person's other devices. If this fails nothing is lost: the tour may show once more elsewhere.
+function tourSync(){sbReq("/auth/v1/user",{method:"PUT",body:{data:{toured:true}}}).catch(()=>{})}
 function settingsView(){const u=me();return`<h1>Settings</h1>${INFO?`<div class="inf" role="status">${esc(INFO)}</div>`:""}<section class="pnl"><h2>Appearance</h2><div class="opts">${THEMES.map(([v,l,c])=>`<button class="optc${S.theme===v?" on":""}" data-act="theme" data-v="${v}"><i class="sw" style="background:${c}"></i>${l}</button>`).join("")}</div></section>
-<section class="pnl"><h2>More</h2><div class="row"><button class="btn" data-act="goseg" data-v="friends">Friends</button><button class="btn" data-act="goseg" data-v="inbox">Messages</button><button class="btn" data-act="welcome">Welcome screens</button>${SBON?`<button class="btn" data-act="waitlist">School waitlist</button>`:""}${u&&u.provider?`<button class="btn" data-act="goseg" data-v="post">Post an opportunity</button>`:""}</div></section>
+<section class="pnl"><h2>More</h2><div class="row"><button class="btn" data-act="goseg" data-v="friends">Friends</button><button class="btn" data-act="goseg" data-v="inbox">Messages</button><button class="btn" data-act="welcome">Welcome screens</button><button class="btn" data-act="tour">Show the tour</button>${SBON?`<button class="btn" data-act="waitlist">School waitlist</button>`:""}${u&&u.provider?`<button class="btn" data-act="goseg" data-v="post">Post an opportunity</button>`:""}</div></section>
 <section class="pnl"><h2>Quiz &amp; data</h2><div class="row"><button class="btn" data-act="quiz">${S.done?"Retake the quiz":"Take the quiz"}</button><button class="btn" data-act="clear">${sbIn()?"Clear data on this device":"Clear my saved data"}</button></div><p class="mut" style="margin-bottom:0">${sbIn()?"Your quiz answers and saved items are saved to your account"+(sbFails?", but some changes haven’t reached it yet. They’ll sync when you’re back online":"")+". Friends and messages are saved on this device only for now.":SBON?"Everything is saved on this device only. Create an account to keep your quiz answers and saved items on every device.":"Everything is saved on this device only."}</p></section>
 <section class="pnl"><h2>Account</h2>${u?`<p><b>${esc(u.name)}</b><br><span class="mut">${esc(u.email)} · ${esc(u.role)}${u.provider?" · Provider"+(u.org?" ("+esc(u.org)+")":""):""}</span></p>${S.err?`<div class="err" role="alert">${esc(S.err)}</div>`:""}<div class="row">${sbIn()?`<button class="btn" data-act="chpw">Change password</button>`:""}<button class="btn" data-act="logout">Log out</button><button class="btn" data-act="del">Delete my account</button></div>`:`<p class="mut">You’re using ${BRAND} as a guest.</p><div class="row"><button class="btn pri" data-act="login">Log in</button><button class="btn" data-act="signup">Create account</button></div>`}</section>`}
-function render(){if(S.stage==="chpw"&&!sbIn())S.stage="app";if(S.tab==="Admin"&&!sbAdmin())S.tab="Home";if(S.stage==="app"&&needQuiz())S.stage=me()?"prompt":"auth";const app=S.stage==="app",u=me(),R=document.documentElement;if(app)S.seen=true;document.body.classList.toggle("full",!app);$("bnm").textContent=BRAND;$("hacct").hidden=!!u;const ah=$("hadm");ah.hidden=!(u&&sbAdmin());ah.classList.toggle("on",app&&S.tab==="Admin");document.title=TITLE;
+function render(){if(S.stage==="chpw"&&!sbIn())S.stage="app";if(S.tab==="Admin"&&!sbAdmin())S.tab="Home";if(S.stage==="app"&&needQuiz())S.stage=me()?"prompt":"auth";else if(S.stage==="prompt"&&me()&&canEnter())S.stage="app";const app=S.stage==="app",u=me(),R=document.documentElement;if(app)S.seen=true;document.body.classList.toggle("full",!app);$("bnm").textContent=BRAND;$("hacct").hidden=!!u;const ah=$("hadm");ah.hidden=!(u&&sbAdmin());ah.classList.toggle("on",app&&S.tab==="Admin");document.title=TITLE;
  if(S.theme==="auto")R.removeAttribute("data-theme");else R.dataset.theme=S.theme;R.dataset.anim=S.anim;
  const tb=short=>TABS.map(([t,i])=>`<button class="${t===S.tab?"on":""}" data-tab="${t}"><span class="ti">${IC[i]}</span><span>${short&&SHORT[t]||t}</span></button>`).join("");$("nav").innerHTML=tb(false);$("bn").innerHTML=tb(true);
  $("full").innerHTML=app?"":stageView();const t=S.tab;
  $("main").innerHTML=!app?"":t==="Search"?searchView():t==="Settings"?settingsView():t==="My Activities"?myView():t==="Admin"?adminView():["School","Community","Explore"].includes(t)?listView(t):homeView();
- if(app&&t==="Admin"&&!ADM&&!ADMBUSY&&!ADMERR)admLoad();save();hSync()}
+ if(app&&t==="Admin"&&!ADM&&!ADMBUSY&&!ADMERR)admLoad();tourDraw();save();hSync()}
 /* ---------- events ---------- */
 async function act(a,d){
  const F=x=>{Object.assign(S,x);render();scrollTo(0,0)};INFO="";
@@ -510,6 +603,10 @@ async function act(a,d){
  else if(a==="snext")S.slide<2?F({slide:S.slide+1}):act(entry().a);else if(a==="sback")goBack(()=>F({slide:Math.max(0,S.slide-1)}));else if(a==="welcome")F({stage:"intro",slide:0});
  else if(a==="back")goBack(()=>F({step:Math.max(0,S.step-1),err:""}));
  else if(a==="next"){const m=valid();if(m){S.err=m;render();return}if(S.step<PAGES.length-1)F({step:S.step+1,err:""});else{S.done=true;if(me()&&!me().sb)me().ans=S.ans;if(sbIn()){SBS.dirty=true;sbSave();sbQueue()}F({stage:"loading"});runLoad()}}
+ // the first-login tour: Next and Back, Skip and Done, and starting it again from Settings
+ else if(a==="tournext"||a==="tourback"){if(TOUR!==null){TOUR=Math.max(0,TOUR+(a==="tournext"?1:-1));tourDraw()}}
+ else if(a==="tourskip"||a==="tourdone")tourEnd();
+ else if(a==="tour"){TOUR=0;F({stage:"app",tab:"Home"})}
  else if(a==="playvid")playVideo();
  else if(a==="explore"){S.open[d.id]=!S.open[d.id];render()}else if(a==="mine"){S.mine[d.id]=!S.mine[d.id];render();sbQueue()}else if(a==="save"){S.saved[d.id]=!S.saved[d.id];render();sbQueue()}
  else if(a==="theme"){S.theme=d.v;render()}else if(a==="cat"){S.cat=d.v;S.lim=8;render()}else if(a==="more"){S.lim+=MORE;render()}else if(a==="seg"){S.seg=d.v;S.compose=null;render()}else if(a==="myact")go("My Activities",{seg:"doing"});else if(a==="goseg")go("My Activities",{seg:d.v,compose:null});
@@ -610,6 +707,9 @@ function init(){
  document.addEventListener("change",e=>{const t=e.target;if(t.dataset.f==="anim"){S.anim=t.value;render();return}const id=t.dataset.id;if(!id)return;
   if(t.type==="checkbox")S.ans[id]=[...document.querySelectorAll(`input[data-id="${id}"]:checked`)].map(x=>x.value);else S.ans[id]=t.value;save()});
  document.addEventListener("input",e=>{const t=e.target;if(t.dataset.id&&(t.tagName==="TEXTAREA"||t.type==="text")){S.ans[t.dataset.id]=t.value;save()}else if(/^w_(org|email|note)$/.test(t.id||""))WLF[t.id.slice(2)]=t.value});
+ // Escape ends the tour; turning the phone or resizing the window moves the card so it never covers what it points at
+ document.addEventListener("keydown",e=>{if(e.key==="Escape"&&TOUR!==null)tourEnd()});
+ addEventListener("resize",()=>{if(TOUR!==null)tourDraw()});
  $("q").addEventListener("input",e=>{S.q=e.target.value;if(S.q.trim())S.tab="Search";else if(S.tab==="Search")S.tab="Home";render()});$("q").value=S.q;
  if(SBON){sbEvents();sbSync()}}
 if(typeof document!=="undefined")init();

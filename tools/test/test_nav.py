@@ -22,6 +22,7 @@ APP={'stage':'app','tab':'School','seen':True,'done':True,'theme':'light','ans':
 FILL="""(()=>{for(const q of PAGES[S.step].q){if(q.opt)continue;const o=q.o||[];S.ans[q.id]=q.k==='zip'?'77095':q.k==='text'?'I like robotics, biology and helping people':(q.k==='select'||q.k==='radio')?o[0]:q.k==='skills'?(S.ans.skills||{}):[o[0]]}})()"""
 
 def seed(state,session):
+    if state is not None: state=dict(state); state.setdefault('toured',True)   # keep the first-login tour out of the way (test_tour.py covers it)
     js="try{if(!sessionStorage.getItem('__seed')){sessionStorage.setItem('__seed','1');"
     if state is not None: js+="localStorage.setItem('bl.state',%s);"%json.dumps(json.dumps(state))
     if session: js+="sessionStorage.setItem('bl.visit','1');"

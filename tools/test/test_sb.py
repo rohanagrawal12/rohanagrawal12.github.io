@@ -30,6 +30,11 @@ DIALOGS = []; ACCEPT = [True]
 ROLE_TXT = {'Student': 'I’m a student', 'Parent': 'parent or guardian', 'Teacher': 'I’m a teacher', 'Organizer': 'run a club'}
 
 def newpage(b, vp, fake, state=None, sb=None, users=None, visit=True, scheme='light', dsf=1, url=URL, local=False):
+    # keep the first-login tour out of the way here (it is covered by test_tour.py): guests and accounts count as having seen it
+    if state is not None:
+        state = dict(state); state.setdefault('toured', True)
+    if users is not None:
+        users = {k: dict(v, toured=v.get('toured', True)) for k, v in users.items()}
     mob = vp['width'] < 500
     ctx = b.new_context(viewport=vp, device_scale_factor=dsf, is_mobile=mob, has_touch=mob, color_scheme=scheme)
     js = "try{if(!sessionStorage.getItem('__seed')){sessionStorage.setItem('__seed','1');"
@@ -73,7 +78,9 @@ def do_quiz(pg, ms=700):
     pg.click('#full [data-act="quiz"]'); w(pg, 200)
     for i in range(4):
         pg.evaluate(FILL); pg.click('[data-act="next"]'); w(pg, 150)
-    pg.wait_for_function("S.stage==='app'", timeout=9000); w(pg, ms)
+    pg.wait_for_function("S.stage==='app'", timeout=9000)
+    pg.evaluate("if(TOUR!==null)tourEnd()")   # a guest's first visit to Home starts the tour: close it so it does not cover the page
+    w(pg, ms)
 def logged_in_page(b, vp, fake, email, state=None, ttl=None, saved=None, known=None, adm=None, **kw):
     if email not in fake.users:
         fake.add_user(email, PW, {'name': email.split('@')[0].title(), 'role': 'Student', 'provider': False, 'org': ''})
