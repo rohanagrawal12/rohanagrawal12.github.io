@@ -19,7 +19,7 @@ def check(name,ok,detail=''):
 
 ANS={'grade':'10th grade','school':'The Village School','learn':'biology and chemistry','want':['Join a club'],'why':['Trying new things'],'time':'3-5 hours'}
 APP={'stage':'app','tab':'School','seen':True,'done':True,'theme':'light','ans':ANS}
-FILL="""(()=>{for(const q of PAGES[S.step].q){if(q.opt)continue;const o=q.o||[];S.ans[q.id]=q.k==='text'?'I like robotics, biology and helping people':(q.k==='select'||q.k==='radio')?o[0]:q.k==='skills'?(S.ans.skills||{}):[o[0]]}})()"""
+FILL="""(()=>{for(const q of PAGES[S.step].q){if(q.opt)continue;const o=q.o||[];S.ans[q.id]=q.k==='zip'?'77095':q.k==='text'?'I like robotics, biology and helping people':(q.k==='select'||q.k==='radio')?o[0]:q.k==='skills'?(S.ans.skills||{}):[o[0]]}})()"""
 
 def seed(state,session):
     js="try{if(!sessionStorage.getItem('__seed')){sessionStorage.setItem('__seed','1');"
@@ -52,11 +52,13 @@ try:
         # A: returning visitor opens the site in a new tab -> welcome screens first
         ctx,pg,errs=newpage(b,vp,APP,session=False)
         v=view(pg); check(f'{L} A1 returning visitor on a fresh visit sees welcome screen 1',v['stage']=='intro' and v['slide']==0,v)
-        check(f'{L} A2 top button says Open the app','Open the app' in pg.locator('.pill').inner_text())
+        check(f'{L} A2 top button says Go to my Home (the quiz is done)','Go to my Home' in pg.locator('.pill').inner_text())
         pg.locator('.pill').click(); w(pg); v=view(pg)
-        check(f'{L} A3 Open the app goes to the list',v['stage']=='app' and v['tab']=='School',v)
-        check(f'{L} A4 list starts with 8 items',cards(pg)==8,cards(pg))
-        pg.go_back(); w(pg); v=view(pg); check(f'{L} A5 Back returns to the welcome screen',v['stage']=='intro',v)
+        check(f'{L} A3 Go to my Home opens the Home page',v['stage']=='app' and v['tab']=='Home',v)
+        tab(pg,'School')
+        check(f'{L} A4 School list starts with 8 items',cards(pg)==8,cards(pg))
+        pg.go_back(); w(pg); v=view(pg); check(f'{L} A4b Back from School returns to Home',v['tab']=='Home',v)
+        pg.go_back(); w(pg); v=view(pg); check(f'{L} A5 Back again returns to the welcome screen',v['stage']=='intro',v)
         pg.go_back(); w(pg,400); check(f'{L} A6 Back again leaves the site (first page of the visit)',pg.url=='about:blank',pg.url)
         ctx.close()
 
@@ -70,8 +72,8 @@ try:
         pg.go_forward(); w(pg); check(f'{L} B4 Forward goes to screen 3',view(pg)['slide']==2)
         pg.click('[data-act="sback"]'); w(pg,700); v=view(pg)
         check(f'{L} B5 in-app Back button goes to screen 2 without adding history',v['slide']==1 and hl(pg)==n,(v,hl(pg),n))
-        pg.click('[data-act="snext"]'); w(pg); pg.click('[data-act="snext"]'); w(pg)
-        check(f'{L} B6 last Next goes to account screen for a new visitor',view(pg)['stage']=='auth',view(pg))
+        pg.click('[data-act="snext"]'); w(pg); pg.click('.bb [data-act="start"]'); w(pg)
+        check(f'{L} B6 Take the quiz on the last screen goes to the account step for a new visitor',view(pg)['stage']=='auth',view(pg))
         pg.go_back(); w(pg); check(f'{L} B7 Back from account screen returns to screen 3',view(pg)['stage']=='intro' and view(pg)['slide']==2)
         ctx.close()
 
@@ -142,7 +144,7 @@ try:
         ctx,pg,errs=newpage(b,vp,APP,session=True)
         tab(pg,'Settings'); pg.click('[data-act="welcome"]'); w(pg)
         check(f'{L} H1 Settings has Welcome screens',view(pg)['stage']=='intro' and view(pg)['slide']==0,view(pg))
-        pg.locator('.pill').click(); w(pg); check(f'{L} H2 Open the app returns to the app',view(pg)['stage']=='app',view(pg))
+        pg.locator('.pill').click(); w(pg); check(f'{L} H2 Go to my Home returns to the app',view(pg)['stage']=='app' and view(pg)['tab']=='Home',view(pg))
         pg.go_back(); w(pg); check(f'{L} H3 Back returns to the welcome screen',view(pg)['stage']=='intro',view(pg))
         ctx.close()
 
@@ -162,7 +164,7 @@ try:
         check(f'{L} T2 box is 16:9',abs(info['w']/info['h']-16/9)<0.02,info)
         check(f'{L} T3 box fits the screen, no sideways scroll',info['l']>=0 and info['r']<=info['vw'] and info['sw']<=info['vw'],info)
         check(f'{L} T4 label says Play the video (live config)',info['tag'].strip()=='Play the video',info)
-        check(f'{L} T5 Take the quiz button still there',pg.locator('[data-act="quiz"]').count()==1)
+        check(f'{L} T5 Take the quiz button still there',pg.locator('.cta2 [data-act="start"]').count()==1)
         pg.screenshot(path=f'{SP}/shots/{L}-welcome1-new-thumb.png')
         ctx.close()
 
@@ -220,7 +222,7 @@ try:
     check('P1 clicking the thumbnail starts the video playing',bool(st) and (not st['paused']) and st['t']>0.2,st)
     r=pg.evaluate("(()=>{const b=document.querySelector('.vid').getBoundingClientRect();return {w:b.width,h:b.height}})()")
     check('P2 player box keeps the 16:9 size of the thumbnail',abs(r['w']/r['h']-16/9)<0.02,r)
-    pg.locator('[data-act="quiz"]').click(); w(pg); check('P3 Take the quiz still works after playing',view(pg)['stage']=='quiz',view(pg))
+    pg.locator('.cta2 [data-act="start"]').click(); w(pg); check('P3 Take the quiz still works after playing (account step first)',view(pg)['stage']=='auth',view(pg))
     ctx.close()
     ctx,pg=variant('https://example.com/clip.webm',extra=serve)
     pg.focus('button.vid.play'); pg.keyboard.press('Enter'); w(pg,1600)
@@ -248,7 +250,7 @@ try:
         ctx,pg,errs=newpage(b,vp,APP,session=False,dsf=dsf); pg.screenshot(path=f'{SP}/shots/{label}-welcome1-returning.png'); 
         pg.click('[data-act="snext"]'); w(pg); pg.screenshot(path=f'{SP}/shots/{label}-welcome2.png')
         pg.click('[data-act="snext"]'); w(pg); pg.screenshot(path=f'{SP}/shots/{label}-welcome3-returning.png')
-        pg.click('[data-act="snext"]'); w(pg); pg.evaluate("document.querySelector('.more2').scrollIntoView({block:'center'})"); w(pg,200)
+        pg.click('.bb [data-act="home"]'); w(pg); pg.screenshot(path=f'{SP}/shots/{label}-home.png'); tab(pg,'School'); pg.evaluate("document.querySelector('.more2').scrollIntoView({block:'center'})"); w(pg,200)
         pg.screenshot(path=f'{SP}/shots/{label}-list-show-more.png'); ctx.close()
     b.close()
 finally:

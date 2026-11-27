@@ -116,6 +116,12 @@ class Fake:
         return o
 
     # ---- the route handler ----
+    def expire_now(self):
+        """Make every access token handed out so far count as expired (like a login that timed out on the server).
+        Every request that still carries one gets 401, however many there are or in what order; a refresh gives a new token that works."""
+        for t, (uid, exp) in list(self.access.items()):
+            self.access[t] = (uid, 0)
+
     def handler(self, route, request):
         u = urlsplit(request.url)
         path, qs = u.path, u.query

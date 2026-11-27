@@ -20,12 +20,14 @@ def check(name, ok, detail=''):
     results.append((name, bool(ok), detail))
     print(('PASS ' if ok else 'FAIL ') + name + ((' | ' + str(detail)[:300]) if (detail != '' and not ok) else ''), flush=True)
 
-ANS = {'grade': '10th grade', 'school': 'The Village School', 'learn': 'biology and chemistry', 'want': ['Join a club'], 'why': ['Trying new things'], 'time': '3-5 hours'}
+ANS = {'grade': '10th grade', 'school': 'The Village School', 'zip': '77095', 'learn': 'biology and chemistry', 'want': ['Join a club'], 'why': ['Trying new things'], 'time': '3-5 hours'}
 APP = {'stage': 'app', 'tab': 'School', 'seen': True, 'done': True, 'theme': 'light', 'ans': ANS}
 APP0 = {'stage': 'app', 'tab': 'School', 'seen': True, 'done': False, 'theme': 'light', 'ans': {}}
-FILL = """(()=>{for(const q of PAGES[S.step].q){if(q.opt)continue;const o=q.o||[];S.ans[q.id]=q.k==='text'?'I like robotics, biology and helping people':(q.k==='select'||q.k==='radio')?o[0]:q.k==='skills'?(S.ans.skills||{}):[o[0]]}})()"""
+FILL = """(()=>{for(const q of PAGES[S.step].q){if(q.opt)continue;const o=q.o||[];S.ans[q.id]=q.k==='zip'?'77095':q.k==='text'?'I like robotics, biology and helping people':(q.k==='select'||q.k==='radio')?o[0]:q.k==='skills'?(S.ans.skills||{}):[o[0]]}})()"""
 PW = 'secret1'
 DIALOGS = []; ACCEPT = [True]
+# the words on the four account-type cards on the sign-up form
+ROLE_TXT = {'Student': 'I’m a student', 'Parent': 'parent or guardian', 'Teacher': 'I’m a teacher', 'Organizer': 'run a club'}
 
 def newpage(b, vp, fake, state=None, sb=None, users=None, visit=True, scheme='light', dsf=1, url=URL, local=False):
     mob = vp['width'] < 500
@@ -56,6 +58,22 @@ def sbs(pg):
     s = pg.evaluate("localStorage.getItem('bl.sb')"); return json.loads(s) if s else None
 def lst(pg, k):
     return pg.evaluate("(k)=>JSON.parse(localStorage.getItem(k)||'null')", k)
+def open_form(pg, which):
+    """Open the log in or the create account form. A guest who has not taken the quiz can only be at the account step; a guest who has is in the app (Settings)."""
+    if pg.evaluate("S.stage") == 'auth': pg.click(f'#full [data-act="{which}"]')
+    else:
+        tab(pg, 'Settings'); pg.click(f'#main [data-act="{which}"]')
+    w(pg)
+def fill_signup(pg, name, email, pw=PW, role=None, org=None):
+    pg.fill('#a_name', name); pg.fill('#a_email', email); pg.fill('#a_pw', pw)
+    if role: pg.locator('.role', has_text=ROLE_TXT[role]).click()
+    if org is not None: pg.fill('#a_org', org)
+def do_quiz(pg, ms=700):
+    """From the required-quiz step: open the quiz, answer the four pages, wait for the app (Home)."""
+    pg.click('#full [data-act="quiz"]'); w(pg, 200)
+    for i in range(4):
+        pg.evaluate(FILL); pg.click('[data-act="next"]'); w(pg, 150)
+    pg.wait_for_function("S.stage==='app'", timeout=9000); w(pg, ms)
 def logged_in_page(b, vp, fake, email, state=None, ttl=None, saved=None, known=None, adm=None, **kw):
     if email not in fake.users:
         fake.add_user(email, PW, {'name': email.split('@')[0].title(), 'role': 'Student', 'provider': False, 'org': ''})
@@ -89,31 +107,46 @@ try:
     check('S1 quiz note for a guest in online mode', 'If you create an account, they’re saved to it.' in pg.locator('.note').inner_text(), pg.locator('.note').inner_text())
     ctx.close()
 
-    # ---------- S2: sign up (with a quiz and a saved item made as a guest) ----------
+    # ---------- S2: sign up (a guest who finished the quiz and saved an item makes an account) ----------
     fake = Fake()
     ctx, pg, errs = newpage(b, D, fake, dict(APP, saved={'school-001': True}))
     tab(pg, 'Settings'); pg.click('#main [data-act="signup"]'); w(pg)
     check('S2 sign-up form is shown', pg.locator('#a_name').count() == 1 and pg.locator('form#af').count() == 1)
     check('S2 autocomplete hints are set', pg.get_attribute('#a_name', 'autocomplete') == 'name' and pg.get_attribute('#a_email', 'autocomplete') == 'email' and pg.get_attribute('#a_pw', 'autocomplete') == 'new-password')
     check('S2 notice on the form says what is stored online', 'stored in your account' in pg.locator('.box').inner_text())
-    pg.fill('#a_name', 'Ada Lovelace'); pg.fill('#a_email', 'Ada@Example.com'); pg.fill('#a_pw', PW)
-    pg.select_option('#a_role', 'Teacher'); pg.check('input[name="a_prov"][value="yes"]'); pg.fill('#a_org', 'Robotics Club')
+    check('S2 four kinds of account to pick from, Student chosen to begin with, each with a plain sentence about what changes',
+          pg.locator('.role').count() == 4 and pg.get_attribute('input[name="a_who"]:checked', 'value') == 'Student' and all(len(pg.locator('.role small').nth(i).inner_text()) > 40 for i in range(4)), pg.locator('.role').count())
+    check('S2 the organization box stays hidden until Organizer is picked', not pg.locator('#a_org').is_visible())
+    fill_signup(pg, 'Ada Lovelace', 'Ada@Example.com', role='Teacher')
+    check('S2 picking Teacher keeps the organization box hidden', not pg.locator('#a_org').is_visible())
     # double click must send one sign-up only, and the button shows it is working
     pg.evaluate("()=>{window.__p=act('dosignup');act('dosignup')}")
     lab = pg.evaluate("(()=>{const e=document.querySelector('[data-act=dosignup]');return e?e.innerText:'(gone)'})()")
-    pg.wait_for_function("S.stage==='app'&&S.me", timeout=8000); w(pg, 600)
+    pg.wait_for_function("S.me&&S.stage==='prompt'", timeout=8000); w(pg, 600)
     check('S2 button said "Please wait…" while working', lab == 'Please wait…', lab)
     check('S2 only one sign-up request for a double click', len(fake.calls('POST', '/auth/v1/signup')) == 1, len(fake.calls('POST', '/auth/v1/signup')))
     su = fake.calls('POST', '/auth/v1/signup')[0]
-    check('S2 sign-up body carries email, password and the profile details', su['body'] == {'email': 'ada@example.com', 'password': PW, 'data': {'name': 'Ada Lovelace', 'role': 'Teacher', 'provider': True, 'org': 'Robotics Club'}}, su['body'])
+    check('S2 sign-up body carries email, password and the profile details', su['body'] == {'email': 'ada@example.com', 'password': PW, 'data': {'name': 'Ada Lovelace', 'role': 'Teacher', 'provider': False, 'org': ''}}, su['body'])
     check('S2 sign-up request has no Authorization header', su['auth'] is None, su['auth'])
     uid = fake.users['ada@example.com']['id']
     rest = [c for c in fake.log if c['path'].startswith('/rest/')]
     check('S2 every data request carries the signed-in token and never the publishable key', rest and all(c['auth'] and c['auth'].startswith('Bearer at-') for c in rest), [c['auth'] for c in rest])
     check('S2 the fake service saw no rule broken', fake.violations == [], fake.violations)
     prof = fake.profiles.get(uid) or {}
-    check('S2 profile row created with name, role, provider and organization', (prof.get('name'), prof.get('role'), prof.get('is_provider'), prof.get('org')) == ('Ada Lovelace', 'Teacher', True, 'Robotics Club'), prof)
-    check('S2 quiz answers made as a guest went up with the new account', prof.get('quiz_answers') == ANS, prof.get('quiz_answers'))
+    check('S2 profile row created with name, role and provider flag', (prof.get('name'), prof.get('role'), prof.get('is_provider')) == ('Ada Lovelace', 'Teacher', False) and not prof.get('org'), prof)
+    check('S2 a new account starts empty: the quiz answers a guest made earlier do NOT go up with it', not prof.get('quiz_answers'), prof.get('quiz_answers'))
+    check('S2 right after sign-up there is nothing matched yet: no answers, quiz not done, and the person is sent to the quiz step', pg.evaluate("[S.stage,S.done,JSON.stringify(S.ans)]") == ['prompt', False, '{}'], pg.evaluate("[S.stage,S.done,JSON.stringify(S.ans)]"))
+    pt = pg.locator('#full').inner_text()
+    check('S2 the quiz step is about the student (a teacher) and says nothing is matched yet', 'Take the quiz about the student.' in pt and 'Nothing is matched to the student yet.' in pt, pt[:300])
+    check('S2 the quiz step has one big Take the quiz button and a Log out link, and no way to skip', pg.locator('#full [data-act="quiz"]').count() == 1 and pg.locator('#full [data-act="logout"]').count() == 1 and 'skip' not in pt.lower() and 'not now' not in pt.lower() and 'open the app' not in pt.lower(), pt)
+    pg.click('#full [data-act="quiz"]'); w(pg, 300)
+    qt_ = pg.locator('#full').inner_text()
+    check('S2 the quiz asks about the student, not about “you”', 'What grade/year is the student in?' in qt_ and 'ZIP code does the student live in' in qt_ and 'TELL US ABOUT THE STUDENT' in qt_, qt_[:400])
+    for i in range(4):
+        pg.evaluate(FILL); pg.click('[data-act="next"]'); w(pg, 150)
+    pg.wait_for_function("S.stage==='app'", timeout=9000); w(pg, 1500)
+    check('S2 finishing the quiz opens Home', pg.evaluate("[S.stage,S.tab,S.done]") == ['app', 'Home', True], pg.evaluate("[S.stage,S.tab,S.done]"))
+    check('S2 the answers made after signing up reach the account', (fake.profiles.get(uid) or {}).get('quiz_answers', {}).get('learn') == 'I like robotics, biology and helping people', fake.profiles.get(uid))
     check('S2 the guest saved item went up with the new account', fake.rows(uid, 'saved') == ['school-001'], fake.rows(uid))
     d = store(pg)
     check('S2 password is not stored anywhere in the browser', all(PW not in v for v in d.values()), [k for k, v in d.items() if PW in v])
@@ -122,7 +155,7 @@ try:
     check('S2 sync info up to date (known saved matches, answers clean)', s and s['known']['saved'] == ['school-001'] and s['dirty'] is False, s)
     u = lst(pg, 'bl.users').get('ada@example.com', {})
     check('S2 device copy of the account has no password hash and no quiz answers', 'pw' not in u and 'ans' not in u and u.get('sb') == 1, u)
-    check('S2 after sign-up the app is shown (already seen the welcome)', pg.evaluate("S.stage") == 'app' and pg.evaluate("S.me") == 'ada@example.com')
+    check('S2 after the quiz the app is shown (already seen the welcome)', pg.evaluate("S.stage") == 'app' and pg.evaluate("S.me") == 'ada@example.com')
     tab(pg, 'Settings'); st = pg.locator('#main').inner_text()
     check('S2 Settings shows the account and the online-saving note', 'ada@example.com' in st and 'saved to your account' in st and 'Clear data on this device' in st, st[:400])
     pg.evaluate("act('quiz')"); w(pg)
@@ -170,13 +203,14 @@ try:
     d = store(pg)
     check('S6 quiz text is gone from everything stored here', all('astronomy' not in v and 'biology' not in v for v in d.values()), [k for k, v in d.items() if 'astronomy' in v or 'biology' in v])
     check('S6 the account keeps its data online', len(fake.rows(uid)) >= 3 and fake.profiles[uid]['quiz_answers']['learn'] == 'astronomy and rockets')
-    tab(pg, 'Settings'); check('S6 Settings now offers log in again', pg.locator('#main [data-act="login"]').count() == 1)
+    check('S6 after logging out the first screen is the account step, with a way back in', pg.evaluate("S.stage") == 'auth' and pg.locator('#full [data-act="login"]').count() == 1 and pg.locator('#full [data-act="signup"]').count() == 1, pg.evaluate("S.stage"))
     ctx.close()
 
     # ---------- S4: finishing the quiz while signed in sends the answers ----------
     fake = Fake()
     ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'quiz@example.com')
-    pg.evaluate("act('quiz')"); w(pg)
+    check('S4 a signed-in account that has not taken the quiz is held at the quiz step', pg.evaluate("S.stage") == 'prompt', pg.evaluate("S.stage"))
+    pg.click('#full [data-act="quiz"]'); w(pg)
     for i in range(4):
         pg.evaluate(FILL); pg.click('[data-act="next"]'); w(pg, 150)
     pg.wait_for_function("S.stage==='app'", timeout=9000); w(pg, 1500)
@@ -193,7 +227,8 @@ try:
     fake.profiles[uid]['quiz_answers'] = ANS
     fake.activity += [{'user_id': uid, 'opp_id': 'school-003', 'kind': 'saved'}, {'user_id': uid, 'opp_id': 'school-004', 'kind': 'doing'}]
     ctx, pg, errs = newpage(b, D, fake, APP0)
-    tab(pg, 'Settings'); pg.click('#main [data-act="login"]'); w(pg)
+    check('S7 a guest who has not taken the quiz starts at the account step', pg.evaluate("S.stage") == 'auth', pg.evaluate("S.stage"))
+    pg.click('#full [data-act="login"]'); w(pg)
     check('S7 login form has current-password hint and no name box', pg.get_attribute('#a_pw', 'autocomplete') == 'current-password' and pg.locator('#a_name').count() == 0)
     pg.fill('#a_email', 'Grace@Example.com'); pg.fill('#a_pw', 'wrongpass')
     pg.click('[data-act="dologin"]'); w(pg, 500)
@@ -203,6 +238,7 @@ try:
     pg.fill('#a_pw', PW); pg.press('#a_pw', 'Enter')
     pg.wait_for_function("S.stage==='app'&&S.me", timeout=8000); w(pg, 500)
     check('S7 Enter key logs in', pg.evaluate("S.me") == 'grace@example.com')
+    check('S7 logging in lands on Home, with no quiz asked (the account already has its answers)', pg.evaluate("[S.stage,S.tab]") == ['app', 'Home'], pg.evaluate("[S.stage,S.tab]"))
     check('S7 quiz answers came from the account', pg.evaluate("S.done") is True and pg.evaluate("S.ans.learn") == 'biology and chemistry')
     check('S7 saved and doing items came from the account', pg.evaluate("!!S.saved['school-003']&&!!S.mine['school-004']"))
     check('S7 the error message is gone after logging in', pg.evaluate("S.err") == '')
@@ -222,7 +258,7 @@ try:
     # ---------- S8: error messages and odd cases ----------
     fake = Fake(); fake.add_user('taken@example.com', PW)
     ctx, pg, errs = newpage(b, D, fake, APP0)
-    tab(pg, 'Settings'); pg.click('#main [data-act="signup"]'); w(pg)
+    pg.click('#full [data-act="signup"]'); w(pg)
     pg.fill('#a_name', 'Tom'); pg.fill('#a_email', 'taken@example.com'); pg.fill('#a_pw', PW); pg.click('[data-act="dosignup"]'); w(pg, 600)
     check('S8 existing email gets a friendly message', pg.locator('.err').inner_text() == 'That email already has an account. Try logging in.', pg.locator('.err').inner_text())
     check('S8 typed name, email and password are kept', pg.input_value('#a_name') == 'Tom' and pg.input_value('#a_email') == 'taken@example.com' and pg.input_value('#a_pw') == PW)
@@ -246,7 +282,7 @@ try:
     # confirm-email switched on
     fake = Fake(); fake.confirm = True
     ctx, pg, errs = newpage(b, D, fake, APP0)
-    tab(pg, 'Settings'); pg.click('#main [data-act="signup"]'); w(pg)
+    pg.click('#full [data-act="signup"]'); w(pg)
     pg.fill('#a_name', 'Cy'); pg.fill('#a_email', 'cy@example.com'); pg.fill('#a_pw', PW); pg.click('[data-act="dosignup"]'); w(pg, 800)
     check('S8 when email confirmation is on, the person is told to check email and sent to log in', pg.evaluate("S.stage") == 'login' and 'emailed you a link' in pg.locator('.inf').inner_text() and pg.input_value('#a_email') == 'cy@example.com', pg.locator('.box').inner_text()[:200])
     check('S8 nothing logged in yet when confirmation is needed', pg.evaluate("S.me") is None and pg.evaluate("localStorage.getItem('bl.sb')") is None)
@@ -268,7 +304,7 @@ try:
     rest = [c for c in fake.log if c['path'].startswith('/rest/')]
     check('S9 data requests used the new token', rest and all(c['auth'] == 'Bearer ' + s['access'] for c in rest), [c['auth'] for c in rest])
     check('S9 still the same person after the refresh', pg.evaluate("S.me") == 'tok@example.com')
-    n = len(fake.log); fake.force401 = 2
+    n = len(fake.log); fake.expire_now()   # every request that still carries the old token gets 401, in any order
     pg.reload(); w(pg, 1500)
     tk = [c for c in fake.log[n:] if c['path'] == '/auth/v1/token']
     check('S9 two requests that both get 401 share one refresh', len(tk) == 1, len(tk))
@@ -324,7 +360,7 @@ try:
     # ---------- S11b: offline at the moment of logging in ----------
     fake = Fake(); fake.add_user('late@example.com', PW)
     ctx, pg, errs = newpage(b, D, fake, APP0)
-    tab(pg, 'Settings'); pg.click('#main [data-act="login"]'); w(pg)
+    pg.click('#full [data-act="login"]'); w(pg)
     pg.fill('#a_email', 'late@example.com'); pg.fill('#a_pw', PW)
     pg.evaluate("()=>{window.__fn=0}")
     # let the login work but fail the data requests afterwards
@@ -339,9 +375,12 @@ try:
     pg.click('[data-act="dologin"]'); w(pg, 1500)
     check('S11b login works even if loading the account data fails', pg.evaluate("S.me") == 'late@example.com' and pg.evaluate("S.stage") == 'app')
     check('S11b the device remembers to load the account data later', pg.evaluate("sbNeedPull") is True)
+    ht = pg.locator('#main').inner_text()
+    check('S11b the person is not pushed into the quiz just because the data did not load: Home says the account has not finished loading', pg.evaluate("S.tab") == 'Home' and 'hasn’t finished loading' in ht and pg.locator('#main [data-act="quiz"]').count() == 0, ht[:300])
     ctx.unroute(SBRE); ctx.route(SBRE, orig)
     pg.evaluate("dispatchEvent(new Event('online'))"); w(pg, 1500)
     check('S11b back online it loads the account data', pg.evaluate("sbNeedPull") is False)
+    check('S11b and once it is loaded and the account has no quiz answers, the quiz step comes up', pg.evaluate("S.stage") == 'prompt', pg.evaluate("S.stage"))
     ctx.close()
 
     # ---------- S12: delete account ----------
@@ -358,13 +397,13 @@ try:
         pg.click('[data-act="del"]'); pg.wait_for_function("S.me===null", timeout=8000); w(pg, 600)
         rp = fake.calls('POST', '/rpc/delete_my_account')
         check(f'S12 rpc={rpc} the delete function is called with the token', len(rp) == 1 and (rp[0]['auth'] or '').startswith('Bearer at-'), rp)
-        check(f'S12 rpc={rpc} afterwards logged out, data cleared here, on the Settings screen', pg.evaluate("S.me") is None and pg.evaluate("localStorage.getItem('bl.sb')") is None and pg.evaluate("S.tab") == 'Settings')
-        txt = pg.locator('#main .inf').inner_text() if pg.locator('#main .inf').count() else ''
+        check(f'S12 rpc={rpc} afterwards logged out, data cleared here, and back at the account step', pg.evaluate("S.me") is None and pg.evaluate("localStorage.getItem('bl.sb')") is None and pg.evaluate("S.stage") == 'auth')
+        txt = pg.locator('#full .inf').inner_text() if pg.locator('#full .inf').count() else ''
         if rpc:
             check('S12 rpc=True the account is gone online and says so', 'del@example.com' not in fake.users and txt == 'Your account was deleted.', (list(fake.users), txt))
         else:
             check('S12 rpc=False data rows deleted online, login kept, and it says so honestly', uid not in fake.profiles and fake.rows(uid) == [] and 'del@example.com' in fake.users and 'Removing the login itself is not switched on yet' in txt, (fake.profiles.keys(), fake.rows(uid), txt))
-        check(f'S12 rpc={rpc} the notice goes away when leaving Settings', (lambda: (tab(pg, 'School'), pg.locator('.inf').count() == 0)[1])())
+        check(f'S12 rpc={rpc} the notice goes away when the person moves on', (lambda: (pg.click('#full [data-act="login"]'), w(pg, 200), pg.locator('.inf').count() == 0)[2])())
         ctx.close()
 
     # ---------- S13: clear data on this device while signed in ----------
@@ -380,29 +419,36 @@ try:
 
     # ---------- S14: with no Supabase address everything still works on this device ----------
     fake = Fake()
-    ctx, pg, errs = newpage(b, D, fake, APP0, local=True)
+    ctx, pg, errs = newpage(b, D, fake, APP, local=True)
     tab(pg, 'Settings'); st = pg.locator('#main').inner_text()
     check('S14 local mode says everything is saved on this device only', 'Everything is saved on this device only.' in st and 'Create an account to keep' not in st, st[:300])
-    pg.click('#main [data-act="signup"]'); w(pg)
+    ctx.close()
+    ctx, pg, errs = newpage(b, D, fake, APP0, local=True)
+    check('S14 local mode: a guest who has not taken the quiz starts at the account step, which says accounts are saved on this device', pg.evaluate("S.stage") == 'auth' and 'Guest and email accounts are saved on this device' in pg.locator('#full').inner_text(), pg.evaluate("S.stage"))
+    pg.click('#full [data-act="signup"]'); w(pg)
     check('S14 local sign-up page keeps the prototype note', 'Prototype: accounts, friends and messages are saved on this device' in pg.locator('.box').inner_text())
     pg.fill('#a_name', 'Local Lee'); pg.fill('#a_email', 'lee@example.com'); pg.fill('#a_pw', PW); pg.press('#a_pw', 'Enter')
     pg.wait_for_function("S.me==='lee@example.com'", timeout=5000); w(pg, 400)
     u = lst(pg, 'bl.users')['lee@example.com']
     check('S14 Enter key creates a device-only account with a password hash', len(u['pw']) == 64 and 'sb' not in u and PW not in json.dumps(store(pg)))
+    check('S14 the new device-only account starts empty and is sent to the quiz step', pg.evaluate("[S.stage,S.done,JSON.stringify(S.ans)]") == ['prompt', False, '{}'], pg.evaluate("[S.stage,S.done,JSON.stringify(S.ans)]"))
+    do_quiz(pg)
+    check('S14 after the quiz the account lands on Home and keeps its answers on this device', pg.evaluate("[S.stage,S.tab,S.done]") == ['app', 'Home', True] and 'ans' in lst(pg, 'bl.users')['lee@example.com'], pg.evaluate("[S.stage,S.tab,S.done]"))
     check('S14 local mode makes no requests', len(fake.log) == 0, fake.log)
     tab(pg, 'Settings'); pg.click('[data-act="logout"]'); w(pg, 500)
-    tab(pg, 'Settings'); pg.click('#main [data-act="login"]'); w(pg)
+    check('S14 logging out goes back to the account step and clears the answers from memory', pg.evaluate("[S.stage,S.done,JSON.stringify(S.ans)]") == ['auth', False, '{}'], pg.evaluate("[S.stage,S.done]"))
+    pg.click('#full [data-act="login"]'); w(pg)
     pg.fill('#a_email', 'lee@example.com'); pg.fill('#a_pw', 'nope'); pg.click('[data-act="dologin"]'); w(pg, 400)
     check('S14 local wrong password shows the message in place and keeps the typed email', pg.locator('.err').inner_text() == 'Email or password is incorrect.' and pg.input_value('#a_email') == 'lee@example.com')
     pg.fill('#a_pw', PW); pg.click('[data-act="dologin"]'); w(pg, 500)
-    check('S14 local log in works', pg.evaluate("S.me") == 'lee@example.com' and pg.evaluate("S.stage") == 'app')
+    check('S14 local log in works, lands on Home and the quiz answers are back (no second quiz)', pg.evaluate("S.me") == 'lee@example.com' and pg.evaluate("[S.stage,S.tab,S.done]") == ['app', 'Home', True], pg.evaluate("[S.stage,S.tab,S.done]"))
     pg.evaluate("act('quiz')"); w(pg)
     check('S14 local quiz note is the old one', 'not sent to a server' in pg.locator('.note').inner_text())
-    tab(pg, 'Settings') if pg.evaluate("S.stage") == 'app' else None
     ACCEPT[0] = True; DIALOGS.clear()
     pg.evaluate("S.stage='app';S.tab='Settings';render()"); w(pg)
     pg.click('[data-act="del"]'); w(pg, 500)
     check('S14 local delete still asks about this device and removes the account', DIALOGS and 'on this device' in DIALOGS[0] and 'lee@example.com' not in lst(pg, 'bl.users'), (DIALOGS, lst(pg, 'bl.users')))
+    check('S14 after deleting, the person is back at the account step', pg.evaluate("S.stage") == 'auth')
     ctx.close()
 
     # ---------- S15: the Sign up button in the top bar (guests only) ----------
@@ -443,30 +489,32 @@ try:
     pg.focus('#hacct'); pg.keyboard.press('Enter'); w(pg)
     check('S15 the button works from the keyboard (Tab, then Enter)', pg.evaluate("S.stage") == 'signup')
     pg.fill('#a_name', 'Hedy Lamarr'); pg.fill('#a_email', 'hedy@example.com'); pg.fill('#a_pw', PW)
-    pg.click('[data-act="dosignup"]'); pg.wait_for_function("S.stage==='app'&&S.me", timeout=8000); w(pg, 600)
-    check('S15 after signing up the button is gone from the top bar', not pg.locator('#hacct').is_visible() and pg.evaluate("S.me") == 'hedy@example.com')
+    pg.click('[data-act="dosignup"]'); pg.wait_for_function("S.me&&S.stage==='prompt'", timeout=8000); w(pg, 600)
+    check('S15 after signing up the person is at the quiz step, where there is no top bar', pg.evaluate("S.me") == 'hedy@example.com' and not pg.locator('#hacct').is_visible())
+    do_quiz(pg)
+    check('S15 once in the app the Sign up button is gone from the top bar', not pg.locator('#hacct').is_visible() and pg.evaluate("document.getElementById('hacct').hidden") is True)
     tab(pg, 'Settings'); pg.click('[data-act="logout"]'); w(pg, 800)
-    check('S15 after logging out the button is back', pg.locator('#hacct').is_visible())
+    check('S15 after logging out the person is back at the account step', pg.evaluate("S.stage") == 'auth')
     ctx.close()
 
     # a guest who just did the quiz can sign up from the top bar and keeps the answers
     fake = Fake()
     ctx, pg, errs = newpage(b, D, fake, APP0)
-    pg.evaluate("act('quiz')"); w(pg)
-    for i in range(4):
-        pg.evaluate(FILL); pg.click('[data-act="next"]'); w(pg, 150)
-    pg.wait_for_function("S.stage==='app'", timeout=9000); w(pg, 500)
-    check('S15 a guest who finished the quiz sees the Sign up button', pg.locator('#hacct').is_visible() and len(fake.log) == 0, len(fake.log))
+    check('S15 a guest who has not taken the quiz starts at the account step', pg.evaluate("S.stage") == 'auth')
+    pg.click('#full [data-act="guest"]'); w(pg)
+    check('S15 "Continue as a guest" leads to the required quiz step (still no way to skip it)', pg.evaluate("S.stage") == 'prompt' and pg.locator('#full [data-act="quiz"]').count() == 1)
+    do_quiz(pg, 500)
+    check('S15 a guest who finished the quiz sees the Sign up button and has made no request', pg.locator('#hacct').is_visible() and len(fake.log) == 0, len(fake.log))
     pg.click('#hacct'); w(pg)
     pg.fill('#a_name', 'Quiz Guest'); pg.fill('#a_email', 'qg@example.com'); pg.fill('#a_pw', PW)
-    pg.click('[data-act="dosignup"]'); pg.wait_for_function("S.stage==='app'&&S.me", timeout=8000); w(pg, 1500)
-    q = (fake.profiles.get(fake.users['qg@example.com']['id']) or {}).get('quiz_answers') or {}
-    check('S15 the quiz answers made as a guest go into the new account', q.get('learn') == 'I like robotics, biology and helping people', q)
+    pg.click('[data-act="dosignup"]'); pg.wait_for_function("S.me&&S.stage==='prompt'", timeout=8000); w(pg, 1500)
+    prof = fake.profiles.get(fake.users['qg@example.com']['id']) or {}
+    check('S15 the new account starts empty: the guest’s answers are not put into it, and the person is asked to take the quiz', not prof.get('quiz_answers') and pg.evaluate("[S.done,JSON.stringify(S.ans)]") == [False, '{}'], prof)
     ctx.close()
 
     # with no Supabase address the button still works (device-only accounts)
     fake = Fake()
-    ctx, pg, errs = newpage(b, D, fake, APP0, local=True)
+    ctx, pg, errs = newpage(b, D, fake, APP, local=True)
     check('S15 local mode: guests see the button too', pg.locator('#hacct').is_visible())
     pg.click('#hacct'); w(pg)
     check('S15 local mode: it opens the same form with the prototype note', pg.evaluate("S.stage") == 'signup' and 'Prototype: accounts' in pg.locator('.box').inner_text())
@@ -550,10 +598,10 @@ try:
 
     # the old password stops working and the new one works, from a fresh browser (like another device)
     ctx, pg, errs = newpage(b, D, fake, APP0)
-    tab(pg, 'Settings'); pg.click('#main [data-act="login"]'); w(pg)
+    pg.click('#full [data-act="login"]'); w(pg)
     pg.fill('#a_email', 'pw@example.com'); pg.fill('#a_pw', PW); pg.click('[data-act="dologin"]'); w(pg, 500)
     check('S17 the old password no longer logs in', pg.locator('.err').inner_text() == 'Email or password is incorrect.' and pg.evaluate("S.me") is None, pg.locator('.err').inner_text())
-    pg.fill('#a_pw', NEWPW); pg.click('[data-act="dologin"]'); pg.wait_for_function("S.stage==='app'&&S.me", timeout=8000); w(pg, 500)
+    pg.fill('#a_pw', NEWPW); pg.click('[data-act="dologin"]'); pg.wait_for_function("S.me==='pw@example.com'", timeout=8000); w(pg, 500)
     check('S17 the new password logs in on another device', pg.evaluate("S.me") == 'pw@example.com')
     ctx.close()
 
@@ -873,12 +921,12 @@ try:
     a = pg.evaluate(ADMBTN)
     check('S19 ...the answer is no, so there is no Admin button', a['vis'] is False and pg.evaluate("document.getElementById('hadm').hidden") is True, a)
     pg.evaluate("go('Admin')"); w(pg, 400)
-    check('S19 even asking for the Admin page directly ends on the School tab and asks for no admin data', pg.evaluate("S.tab") == 'School' and pg.locator('#main h1').inner_text() != 'Admin' and not OVQ(fake), (pg.evaluate("S.tab"), len(OVQ(fake))))
+    check('S19 even asking for the Admin page directly ends on the Home tab and asks for no admin data', pg.evaluate("S.tab") == 'Home' and pg.locator('#main h1').inner_text() != 'Admin' and not OVQ(fake), (pg.evaluate("S.tab"), len(OVQ(fake))))
     check('S19 the answer is remembered as "not an admin" on this device', sbs(pg).get('adm') in (False, None), sbs(pg).get('adm'))
     ctx.close()
     ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'stale@example.com', state=dict(APP, tab='Admin'), adm=True)
     w(pg, 900)
-    check('S19 a student whose device still says "Admin" (left over, or edited by hand) is put back on School and sees no admin data', pg.evaluate("S.tab") == 'School' and not pg.locator('#main .ad-stats').count() and not pg.locator('#hadm').is_visible() and len(OVQ(fake)) <= 1 and pg.evaluate("ADM") is None, (pg.evaluate("S.tab"), len(OVQ(fake))))
+    check('S19 a student whose device still says "Admin" (left over, or edited by hand) is put back on Home and sees no admin data', pg.evaluate("S.tab") == 'Home' and not pg.locator('#main .ad-stats').count() and not pg.locator('#hadm').is_visible() and len(OVQ(fake)) <= 1 and pg.evaluate("ADM") is None, (pg.evaluate("S.tab"), len(OVQ(fake))))
     check('S19 even if that request was made, the database said no (403) and nothing was kept', pg.evaluate("ADM") is None and sbs(pg).get('adm') is False, sbs(pg))
     ctx.close()
 
@@ -894,12 +942,12 @@ try:
 
     # the SQL is run while the site is already open in a tab: logging out and in again is enough, no reload needed
     fake = admin_world(); fake.sql = False
-    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, BOSS, state=dict(APP0, tab='Settings'))
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, BOSS, state=dict(APP, tab='Settings'))
     w(pg, 900)
     check('S19 before the SQL is run, even the admin has no Admin button', not pg.locator('#hadm').is_visible() and len(ISQ(fake)) == 1, len(ISQ(fake)))
     fake.sql = True     # the owner runs admin.sql in another tab
     pg.click('#main [data-act="logout"]'); w(pg, 900)
-    tab(pg, 'Settings'); pg.click('#main [data-act="login"]'); w(pg)
+    pg.click('#full [data-act="login"]'); w(pg)
     pg.fill('#a_email', BOSS); pg.fill('#a_pw', PW); pg.click('[data-act="dologin"]')
     landed = wait_ok(pg, ADMOK)
     check('S19 after the SQL is run, logging out and in again lands on the Admin page without reloading the site', landed and pg.evaluate("S.tab") == 'Admin' and pg.evaluate(ADMBTN)['vis'] is True, (landed, pg.evaluate("S.tab")))
@@ -907,9 +955,9 @@ try:
 
     # logging in as the admin lands on the Admin page
     fake = admin_world(); bossid = fake.users[BOSS]['id']
-    ctx, pg, errs = newpage(b, D, fake, APP0)   # a guest with no quiz answers, so nothing is uploaded into the admin's account on login
-    check('S19 a guest sees Sign up and no Admin button', pg.locator('#hacct').is_visible() and not pg.locator('#hadm').is_visible())
-    tab(pg, 'Settings'); pg.click('#main [data-act="login"]'); w(pg)
+    ctx, pg, errs = newpage(b, D, fake, APP0)   # a guest with no quiz answers (at the account step), so nothing is uploaded into the admin's account on login
+    check('S19 a guest at the account step sees no Admin button', pg.evaluate("S.stage") == 'auth' and not pg.locator('#hadm').is_visible())
+    pg.click('#full [data-act="login"]'); w(pg)
     d0 = len(DIALOGS)
     pg.fill('#a_email', BOSS); pg.fill('#a_pw', PW); pg.click('[data-act="dologin"]')
     landed = wait_ok(pg, ADMOK); w(pg, 400)
@@ -949,9 +997,10 @@ try:
     check('S19 what is kept about being an admin is only a yes on this device', sbs(pg).get('adm') is True, sbs(pg))
 
     # Open the app / Admin button switch without asking for the numbers again
-    pg.click('#main [data-tab="School"]'); w(pg, 400)
+    pg.click('#main [data-tab="Home"]'); w(pg, 400)
     a = pg.evaluate(ADMBTN)
-    check('S19 "Open the app" leaves the Admin page, and the Admin button stays in the top bar but is no longer the current page', pg.evaluate("S.tab") == 'School' and a['vis'] and not a['on'], (pg.evaluate("S.tab"), a))
+    check('S19 "Open the app" opens Home and leaves the Admin page, and the Admin button stays in the top bar but is no longer the current page', pg.evaluate("S.tab") == 'Home' and a['vis'] and not a['on'], (pg.evaluate("S.tab"), a))
+    check('S19 Home tells an admin so, with a way to the Admin page', pg.locator('#main .inf [data-tab="Admin"]').count() == 1 and 'You’re an admin.' in pg.locator('#main .inf').inner_text(), pg.locator('#main').inner_text()[:200])
     pg.click('#hadm'); w(pg, 500)
     check('S19 the Admin button comes back to the same numbers without asking again', pg.evaluate("S.tab") == 'Admin' and pg.locator('#main .ad-stats').count() == 1 and len(OVQ(fake)) == 1, (pg.evaluate("S.tab"), len(OVQ(fake))))
 
@@ -990,10 +1039,10 @@ try:
     # the person is removed from the admin list while the page is open
     fake.admins.discard(bossid)
     pg.click('#main [data-act="admload"]'); w(pg, 900)
-    check('S19 if they were removed as admin, Refresh sends them to the app and the button goes', pg.evaluate("S.tab") == 'School' and not pg.locator('#hadm').is_visible() and pg.evaluate("S.stage") == 'app', (pg.evaluate("S.tab"), pg.locator('#hadm').is_visible()))
+    check('S19 if they were removed as admin, Refresh takes them off the Admin page and the button goes (this person never took the quiz, so they are held at the quiz step)', pg.evaluate("S.tab") == 'Home' and not pg.locator('#hadm').is_visible() and pg.evaluate("S.stage") == 'prompt', (pg.evaluate("S.tab"), pg.locator('#hadm').is_visible(), pg.evaluate("S.stage")))
     check('S19 and the admin data is gone from memory and from the page', pg.evaluate("ADM") is None and 'principal@lincoln.edu' not in pg.content() and sbs(pg).get('adm') is False, sbs(pg))
     pg.evaluate("go('Admin')"); w(pg, 300)
-    check('S19 asking for the Admin page again still ends on School', pg.evaluate("S.tab") == 'School')
+    check('S19 asking for the Admin page again still ends on Home', pg.evaluate("S.tab") == 'Home')
     check('S19 no page errors in all of that', errs == [], errs[:3])
     ctx.close()
 
@@ -1009,7 +1058,7 @@ try:
     ctx, pg, errs, uid = adm_page(D, fake, adm=None)
     w(pg, 900)
     a = pg.evaluate(ADMBTN)
-    check('S19 on a device that has not met this admin yet, the page starts on School, then the Admin button appears after the check', pg.evaluate("S.tab") == 'School' and a['vis'] and not a['on'] and sbs(pg).get('adm') is True, (pg.evaluate("S.tab"), a))
+    check('S19 on a device that has not met this admin yet, the page starts on Home, then the Admin button appears after the check', pg.evaluate("S.tab") == 'Home' and a['vis'] and not a['on'] and sbs(pg).get('adm') is True, (pg.evaluate("S.tab"), a))
     check('S19 and the numbers are only fetched when the Admin button is used', len(OVQ(fake)) == 0, len(OVQ(fake)))
     pg.click('#hadm'); pg.wait_for_function(ADMOK, timeout=8000)
     check('S19 using the button loads the numbers once', pg.evaluate("S.tab") == 'Admin' and len(OVQ(fake)) == 1, len(OVQ(fake)))
@@ -1021,15 +1070,15 @@ try:
     pg.wait_for_function(ADMOK, timeout=8000); w(pg, 300)
     tab(pg, 'Settings'); pg.click('#main [data-act="logout"]'); w(pg, 900)
     check('S19 logging out wipes the admin data from memory, the page and this device', pg.evaluate("ADM") is None and 'principal@lincoln.edu' not in pg.content() and all('principal@lincoln.edu' not in v for v in store(pg).values()) and pg.evaluate("Object.keys(sessionStorage).every(k=>!sessionStorage.getItem(k).includes('lincoln.edu'))"))
-    check('S19 and the Admin button is gone while Sign up is back', not pg.locator('#hadm').is_visible() and pg.locator('#hacct').is_visible() and pg.evaluate("S.tab") != 'Admin', (pg.evaluate("S.tab"),))
+    check('S19 and the Admin button is gone, and the person is back at the account step', not pg.locator('#hadm').is_visible() and pg.evaluate("S.stage") == 'auth' and pg.evaluate("S.tab") != 'Admin', (pg.evaluate("[S.stage,S.tab]"),))
     pg.evaluate("go('Admin')"); w(pg, 300)
-    check('S19 a guest asking for the Admin page ends on School', pg.evaluate("S.tab") == 'School')
+    check('S19 a guest asking for the Admin page ends on Home', pg.evaluate("S.tab") == 'Home')
     n0 = len(OVQ(fake))
-    tab(pg, 'Settings'); pg.click('#main [data-act="login"]'); w(pg)
+    pg.click('#full [data-act="login"]'); w(pg)
     pg.fill('#a_email', 'stu0@example.com'); pg.fill('#a_pw', PW); pg.click('[data-act="dologin"]'); pg.wait_for_function("S.stage==='app'&&S.me==='stu0@example.com'", timeout=8000); w(pg, 700)
-    check('S19 a student who logs in next on the same page lands on School with no Admin button and no admin data', pg.evaluate("S.tab") == 'School' and not pg.locator('#hadm').is_visible() and pg.evaluate("ADM") is None and len(OVQ(fake)) == n0, (pg.evaluate("S.tab"), len(OVQ(fake)) - n0))
+    check('S19 a student who logs in next on the same page lands on Home with no Admin button and no admin data', pg.evaluate("S.tab") == 'Home' and not pg.locator('#hadm').is_visible() and pg.evaluate("ADM") is None and len(OVQ(fake)) == n0, (pg.evaluate("S.tab"), len(OVQ(fake)) - n0))
     pg.evaluate("go('Admin')"); w(pg, 300)
-    check('S19 and cannot open the Admin page either', pg.evaluate("S.tab") == 'School' and 'principal@lincoln.edu' not in pg.content())
+    check('S19 and cannot open the Admin page either', pg.evaluate("S.tab") == 'Home' and 'principal@lincoln.edu' not in pg.content())
     ctx.close()
 
     # the login ends while on the Admin page
@@ -1075,7 +1124,7 @@ try:
     pg.wait_for_function(ADMOK, timeout=8000)
     fake.sql = False
     pg.click('#main [data-act="admload"]'); w(pg, 900)
-    check('S19 if the Admin SQL disappears from the project, the page returns to School without errors', pg.evaluate("S.tab") == 'School' and not pg.locator('#hadm').is_visible() and pg.evaluate("ADM") is None, (pg.evaluate("S.tab"),))
+    check('S19 if the Admin SQL disappears from the project, the page returns to Home without errors', pg.evaluate("S.tab") == 'Home' and not pg.locator('#hadm').is_visible() and pg.evaluate("ADM") is None, (pg.evaluate("S.tab"),))
     ctx.close()
 
     # empty and very full lists
@@ -1227,17 +1276,18 @@ try:
     fake = acct_world()
     ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, 'nina@example.com', state=dict(APP, tab='Admin'), adm=True)
     w(pg, 1200)
-    check('S20 a student never sees the accounts list, even if their device says Admin', pg.evaluate("S.tab") == 'School' and 'wanda@example.com' not in pg.content() and 'boss@example.com' not in pg.content() and pg.evaluate("ADM") is None, pg.evaluate("S.tab"))
+    check('S20 a student never sees the accounts list, even if their device says Admin', pg.evaluate("S.tab") == 'Home' and 'wanda@example.com' not in pg.content() and 'boss@example.com' not in pg.content() and pg.evaluate("ADM") is None, pg.evaluate("S.tab"))
     ctx.close()
 
-    # ---------- S21: a big "Take the quiz" banner at the top of the lists, for anyone who has not taken the quiz ----------
+    # ---------- S21: the big "Take the quiz" banner. The quiz is required, so only people allowed in without it see it (an admin) ----------
     QB = "(()=>{const q=document.querySelector('#main .qb');if(!q)return null;const r=q.getBoundingClientRect(),b=q.querySelector('button'),br=b.getBoundingClientRect();return{first:document.getElementById('main').firstElementChild===q,top:r.top,bottom:r.bottom,w:r.width,bw:br.width,bt:br.top,bb:br.bottom,title:q.querySelector('b').textContent,sub:q.querySelector('span').textContent,btn:b.textContent,act:b.dataset.act,iw:innerWidth,ih:innerHeight,sw:document.documentElement.scrollWidth}})()"
     QN = "document.querySelectorAll('#main [data-act=quiz]').length"
-    fake = Fake()
+    fake = admin_world()
     for label, vp, scheme in [('desktop-light', D, 'light'), ('desktop-dark', D, 'dark'), ('phone-light', P, 'light'), ('phone-dark', P, 'dark'), ('narrow-light', {'width': 320, 'height': 700}, 'light')]:
-        ctx, pg, errs = newpage(b, vp, fake, dict(APP0, theme='auto' if scheme == 'dark' else 'light'), scheme=scheme)
+        ctx, pg, errs, uid, sess = logged_in_page(b, vp, fake, BOSS, state=dict(APP0, tab='School', theme='auto' if scheme == 'dark' else 'light'), adm=True, scheme=scheme)
+        w(pg, 800)
         q = pg.evaluate(QB)
-        check(f'S21 {label}: someone who has not taken the quiz gets a banner as the very first thing on the School page', bool(q) and q['first'], q)
+        check(f'S21 {label}: an admin who has not taken the quiz is let in and gets a banner as the very first thing on the School page', bool(q) and q['first'], q)
         if q:
             check(f'S21 {label}: it says what the quiz is for and has one clear button', q['title'] == 'Take the quiz to find your matches' and q['sub'] == 'Answer a few questions and we’ll put your best matches first. Takes about 2 minutes.' and q['btn'] == 'Take the quiz' and q['act'] == 'quiz', q)
             check(f'S21 {label}: the button is on the first screen without scrolling, above the bottom bar, and big enough to tap', 0 <= q['bt'] and q['bb'] <= q['ih'] - (80 if vp['width'] < 500 else 0) and q['bb'] - q['bt'] >= 44, q)
@@ -1254,13 +1304,14 @@ try:
         check(f'S21 {label}: no page errors', errs_ == [], errs_[:3])
         ctx.close()
 
-    ctx, pg, errs = newpage(b, D, fake, APP0)
+    ctx, pg, errs, uid, sess = logged_in_page(b, D, fake, BOSS, state=dict(APP0, tab='School'), adm=True)
+    w(pg, 800)
     sub = lambda: pg.evaluate("(()=>{const e=document.querySelector('#main > p.mut');return e?e.textContent:null})()")
     check('S21 without the quiz the page says it is not sorted for the person yet, and the toolbar has no second quiz button', sub() == 'Not sorted for you yet.' and pg.locator('#main .cnt [data-act="quiz"]').count() == 0, sub())
     on = {}
-    for t_ in ('Community', 'Explore', 'My Activities', 'Settings'):
+    for t_ in ('Home', 'Community', 'Explore', 'My Activities', 'Settings'):
         tab(pg, t_); on[t_] = (pg.locator('#main .qb').count(), pg.evaluate(QN))
-    check('S21 the banner is also on Community and Explore, and not on My Activities or Settings (which has its own button)', on == {'Community': (1, 1), 'Explore': (1, 1), 'My Activities': (0, 0), 'Settings': (0, 1)}, on)
+    check('S21 the banner is on Home, Community and Explore, and not on My Activities or Settings (which has its own button)', on == {'Home': (1, 1), 'Community': (1, 1), 'Explore': (1, 1), 'My Activities': (0, 0), 'Settings': (0, 1)}, on)
     tab(pg, 'School')
     pg.evaluate("S.done=true;render()")
     check('S21 once the quiz is done the banner is gone, the page says best matches first, and Retake quiz is back in the toolbar', pg.locator('#main .qb').count() == 0 and sub() == 'Best matches first.' and pg.locator('#main .cnt [data-act="quiz"]').inner_text() == 'Retake quiz' and pg.evaluate(QN) == 1, (sub(),))
@@ -1270,13 +1321,14 @@ try:
     ctx, pg, errs = newpage(b, D, fake, APP)
     check('S21 someone who already took the quiz never sees the banner', pg.locator('#main .qb').count() == 0 and sub() == 'Best matches first.' and pg.locator('#main .cnt [data-act="quiz"]').inner_text() == 'Retake quiz')
     ctx.close()
-    # a brand new account that skipped the quiz (the usual case right after signing up)
+    # an ordinary signed-in account that has not taken the quiz never gets as far as the banner: it is held at the quiz step
     fake = Fake()
     ctx, pg, errs, uid, sess = logged_in_page(b, P, fake, 'newbie@example.com', state=dict(APP0, tab='School'))
     w(pg, 900)
-    q = pg.evaluate(QB)
-    check('S21 a signed-in account with no quiz yet sees the banner too, and it starts the quiz', bool(q) and q['first'] and q['btn'] == 'Take the quiz', q)
-    pg.click('#main .qb [data-act="quiz"]'); w(pg, 400)
+    check('S21 an ordinary account with no quiz is held at the quiz step, with one big Take the quiz button', pg.evaluate("S.stage") == 'prompt' and pg.locator('#full [data-act="quiz"]').count() == 1 and pg.locator('#main .qb').count() == 0, pg.evaluate("S.stage"))
+    bt = pg.evaluate("(()=>{const b=document.querySelector('#full [data-act=quiz]').getBoundingClientRect();return{t:b.top,b:b.bottom,w:b.width,ih:innerHeight,iw:innerWidth}})()")
+    check('S21 and that button is big, full width on a phone, and on the first screen without scrolling', bt['b'] <= bt['ih'] and bt['b'] - bt['t'] >= 44 and bt['w'] >= bt['iw'] * 0.6, bt)
+    pg.click('#full [data-act="quiz"]'); w(pg, 400)
     check('S21 ...and the quiz opens for them', pg.evaluate("[S.stage,S.step]") == ['quiz', 0], pg.evaluate("[S.stage,S.step]"))
     ctx.close()
 
@@ -1285,12 +1337,16 @@ try:
     for label, vp, scheme, dsf in [('desktop-light', D, 'light', 1), ('desktop-dark', D, 'dark', 1), ('phone-light', P, 'light', 2), ('phone-dark', P, 'dark', 2)]:
         st = dict(APP0, theme='auto' if 'dark' in label else 'light')
         ctx, pg, errs = newpage(b, vp, fake, st, scheme=scheme, dsf=dsf)
-        tab(pg, 'Settings'); pg.click('#main [data-act="signup"]'); w(pg)
+        pg.screenshot(path=f'{SP}/shots/sb-account-step-{label}.png')
+        pg.click('#full [data-act="signup"]'); w(pg)
         pg.fill('#a_name', 'Look Lee'); pg.fill('#a_email', 'look@example.com'); pg.fill('#a_pw', PW)
         pg.click('[data-act="dosignup"]'); w(pg, 600)
         pg.screenshot(path=f'{SP}/shots/sb-signup-error-{label}.png')
         pg.fill('#a_email', 'x@example.com'); pg.fill('#a_pw', PW)
-        pg.click('[data-act="dosignup"]'); pg.wait_for_function("S.stage==='app'", timeout=8000); w(pg, 800)
+        pg.click('[data-act="dosignup"]'); pg.wait_for_function("S.me&&S.stage==='prompt'", timeout=8000); w(pg, 800)
+        pg.screenshot(path=f'{SP}/shots/sb-quiz-step-{label}.png')
+        do_quiz(pg, 1000)
+        pg.screenshot(path=f'{SP}/shots/sb-home-{label}.png')
         tab(pg, 'Settings'); pg.screenshot(path=f'{SP}/shots/sb-settings-{label}.png', full_page=True)
         ctx.close()
         fake.users.pop('x@example.com', None)
