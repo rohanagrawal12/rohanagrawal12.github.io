@@ -2,7 +2,7 @@
 
 Bulletin helps students find clubs, volunteering and programs that fit them. Answer a short quiz in your own words and every opportunity is ranked with a 1-10 match level. It starts with The Village School (Houston), plus Houston community programs and national or online programs.
 
-Live: https://rohanagrawal12.github.io
+Live: https://yourbulletin.tech
 
 One page, no build step. Open `index.html` in a browser to try it.
 
