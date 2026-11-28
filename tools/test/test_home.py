@@ -35,6 +35,8 @@ APP = {'stage': 'app', 'tab': 'Home', 'seen': True, 'done': True, 'theme': 'ligh
 APP0 = {'stage': 'app', 'tab': 'School', 'seen': True, 'done': False, 'theme': 'light', 'ans': {}}
 FILL = """(()=>{for(const q of PAGES[S.step].q){if(q.opt)continue;const o=q.o||[];S.ans[q.id]=q.k==='zip'?'77095':q.k==='text'?'I like robotics, biology and helping people':(q.k==='select'||q.k==='radio')?o[0]:q.k==='skills'?(S.ans.skills||{}):[o[0]]}})()"""
 PW = 'secret1'
+# the mission statement as written in docs/brand.md (the page adds a red full stop after it)
+MISSION = 'Helping students find clubs, volunteering and programs that fit them, so nobody misses out on something they would love just because they never heard about it'
 D = {'width': 1440, 'height': 900}
 P = {'width': 390, 'height': 844}
 ROLE_TXT = {'Student': 'I’m a student', 'Parent': 'parent or guardian', 'Teacher': 'I’m a teacher', 'Organizer': 'run a club'}
@@ -210,6 +212,7 @@ def run(b):
         t = txt(pg, '#main')
         check('H2 Organizer: Home is about listings, with a Post an opportunity button and what students see', 'Houston Robotics Club · You post opportunities for students to find.' in t and 'Post an opportunity' in t and 'Your listings' in t and 'What students see' in t and 'You haven’t posted anything yet.' in t, t[:400])
         check('H2 Organizer: Home has no quiz button, no match levels and no ZIP box', pg.locator('#main [data-act="quiz"]').count() == 0 and pg.locator('#main .hm').count() == 0 and pg.locator('#z_in').count() == 0)
+        check('H2 Organizer: Home ends with the mission statement', pg.evaluate("document.querySelector('#main').lastElementChild.className") == 'ms' and MISSION in pg.locator('#main .ms p').inner_text(), pg.evaluate("document.querySelector('#main').lastElementChild.outerHTML.slice(0,200)"))
         prof = fake.profiles[fake.users['olive@example.com']['id']]
         check('H2 Organizer: the account is saved as an organizer with its organization', prof.get('role') == 'Organizer' and prof.get('is_provider') is True and prof.get('org') == 'Houston Robotics Club', prof)
         tab(pg, 'School')
@@ -315,6 +318,10 @@ def run(b):
             cu = pg.evaluate("[...document.querySelectorAll('#main .hcols section')].map(s=>[s.querySelector('h2').textContent,s.querySelectorAll('.hr').length])")
             check(f'H5 {label}: Coming up (up to three dated things) and Saved (the two saved ones) sit below', cu[0][0] == 'Coming up' and 1 <= cu[0][1] <= 3 and cu[1] == ['Saved', 2], cu)
             check(f'H5 {label}: the page does not scroll sideways', pg.evaluate("document.documentElement.scrollWidth<=innerWidth"))
+            # the mission is the last thing on the page: a small label, then the statement in large bold type with a red full stop
+            ms = pg.evaluate("(()=>{const m=document.querySelector('#main .ms'),p=m&&m.querySelector('p');if(!p)return null;const c=getComputedStyle(p);return {last:document.querySelector('#main').lastElementChild===m,label:m.querySelector('.eyebrow').textContent,text:p.textContent,red:p.querySelectorAll('.rd').length,size:parseFloat(c.fontSize),weight:parseInt(c.fontWeight)}})()")
+            check(f'H5 {label}: the mission is the last section on Home, with its label, the full sentence and a red full stop', ms and ms['last'] and ms['label'] == 'OUR MISSION' and ms['text'] == MISSION + '.' and ms['red'] == 1, ms)
+            check(f'H5 {label}: the mission is in large bold type (20px or more)', ms and ms['size'] >= 20 and ms['weight'] >= 700, ms)
             pg.screenshot(path=f'{SP}/shots/home-{label}.png', full_page=True)
             # tiles open that part of My Activities
             pg.locator('#main .ht').nth(0).click(); w(pg, 300)

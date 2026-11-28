@@ -4,6 +4,8 @@ REPO=os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 URL=f'http://127.0.0.1:{PORT}/index.html'
 srv=subprocess.Popen(['python3','-I','-m','http.server',str(PORT),'--bind','127.0.0.1'],cwd=REPO,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL); time.sleep(1)
 results=[]
+# the mission statement as written in docs/brand.md (the page adds a red full stop after it)
+MISSION='Helping students find clubs, volunteering and programs that fit them, so nobody misses out on something they would love just because they never heard about it'
 def check(name,ok,detail=''):
     results.append(bool(ok)); print(('PASS ' if ok else 'FAIL ')+name+((' | '+str(detail)) if (detail!='' and not ok) else ''),flush=True)
 view=lambda pg:pg.evaluate("({stage:S.stage,slide:S.slide,step:S.step,tab:S.tab})")
@@ -58,6 +60,11 @@ try:
         check(f'{L} 2 headline Built by a student, for students.','Built by a student, for students.' in pg.locator('h1').inner_text())
         check(f'{L} 2 startup story mentions the school and the Google Form start','The Village School in Houston' in t and 'Google Form' in t and 'grew into a website' in t)
         check(f'{L} 2 mission and who it is for','OUR MISSION' in t and 'WHO IT IS FOR' in t and 'nobody misses out' in t)
+        # the mission statement is the owner's sentence from docs/brand.md, in large bold type, with a red full stop
+        m=pg.evaluate("(()=>{const p=document.querySelector('.mis p'),b=document.querySelector('.blk div:not(.cap)');if(!p||!b)return null;const c=getComputedStyle(p),r=p.getBoundingClientRect(),q=b.parentElement.getBoundingClientRect(),z=document.querySelector('.mis').getBoundingClientRect();return {text:p.textContent,red:p.querySelectorAll('.rd').length,size:parseFloat(c.fontSize),weight:parseInt(c.fontWeight),other:parseFloat(getComputedStyle(b).fontSize),left:Math.abs(z.left-q.left),right:r.right,vw:innerWidth}})()")
+        check(f'{L} 2 the mission is the full sentence from the brand sheet, ending in one red full stop',m and m['text']==MISSION+'.' and m['red']==1,m)
+        check(f'{L} 2 the mission is in large bold type, bigger than the text under Who it is for',m and m['size']>=22 and m['weight']>=700 and m['size']>m['other'],m)
+        check(f'{L} 2 the mission lines up with the Who it is for block and stays on screen',m and m['left']<=1 and m['right']<=m['vw'],m)
         check(f'{L} 2 no leftover art or empty small text',pg.locator('.mid .art').count()==0 and pg.locator('.mid small').count()==0)
         check(f'{L} 2 buttons Back and Get started',pg.locator('[data-act="sback"]').count()==1 and 'Get started' in pg.locator('[data-act="snext"]').inner_text())
         ov=pg.evaluate("document.documentElement.scrollWidth-innerWidth"); check(f'{L} 2 no sideways scroll',ov<=0,ov)

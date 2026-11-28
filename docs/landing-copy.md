@@ -14,6 +14,7 @@ Three points: One place for everything / Matched to you / Free for students
 
 ## ABOUT
 Mission: Helping students find clubs, volunteering and programs that fit them, so nobody misses out on something they would love just because they never heard about it.
+(Shown in large bold type, with a red full stop, on this screen and again at the bottom of the Home page inside the app. In the code it is the `MISSION` constant in `index.html`.)
 Story: Bulletin started with a student at The Village School in Houston who noticed that great clubs were hard to find. It began as a Google Form quiz, got feedback from classmates, and grew into a website.
 How it works: 1. Take the quiz in your own words. 2. See a match level from 1 to 10 for every opportunity. 3. Tap Explore, save, and join.
 Who it is for: Middle school, high school and college students, and the clubs and organizations that want to meet them.

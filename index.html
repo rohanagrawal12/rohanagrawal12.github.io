@@ -177,8 +177,12 @@ h1,h2,h3{font-family:inherit;letter-spacing:-.02em}h1,h2{font-weight:800}h3{font
 .cta2{margin:12px 0 4px}.wbtn.big{padding:15px 38px;font-size:17px;border-radius:8px}.sl2.y .wbtn.big{background:#111113;color:#fff}
 /* The red full stop in the headline. */
 .rd{color:#D6452F}
-/* The text blocks on the About us screen ("OUR MISSION" and "WHO IT IS FOR"). */
+/* The text block on the About us screen ("WHO IT IS FOR"). */
 .blk{width:100%;max-width:440px;text-align:left;border-top:1px solid rgba(255,255,255,.28);padding-top:12px;margin-top:6px;font-size:17px}.blk .cap{opacity:.8;margin-bottom:6px}
+/* The mission statement on the About us screen: a thin line, a small label, then the sentence in large bold type (the lines are balanced so no single word is left alone on the last line). */
+.mid .mis{width:100%;max-width:440px;text-align:left;border-top:1px solid rgba(255,255,255,.28);padding-top:14px;margin-top:6px}.mis .cap{opacity:.8;margin-bottom:8px}.mid .mis p{font-size:27px;font-weight:800;letter-spacing:-.02em;line-height:1.2;max-width:none;text-wrap:balance}
+/* On small phones the mission statement is a little smaller so it fits. */
+@media(max-width:480px){.mid .mis p{font-size:23px}}
 /* The three numbered steps on the Get started screen. */
 .steps{list-style:none;margin:4px 0 0;padding:0;width:100%;max-width:440px;display:grid;gap:10px;text-align:left;font-size:17px}.steps li{display:flex;gap:12px;align-items:center}.steps b{flex:none;width:28px;height:28px;border:1.5px solid currentColor;border-radius:6px;display:grid;place-items:center;font-size:14px}
 /* The plan card on the Get started screen (Students FREE, Schools COMING SOON). */
@@ -243,6 +247,10 @@ h1,h2,h3{font-family:inherit;letter-spacing:-.02em}h1,h2{font-weight:800}h3{font
 .hm{flex:none;font-weight:800;font-size:18px;min-width:54px;text-align:right}.hm small{font-weight:600;font-size:12px;color:var(--mut)}.hr .bm{position:static;flex:none}
 /* Two columns for sections on Home, and the spacing of the Post an opportunity button. */
 .hcols{display:grid;grid-template-columns:1fr 1fr;gap:0 28px}.hcols section>.hr{border-bottom:1px solid var(--line)}.hp1{margin:16px 0 0}
+/* The mission section at the bottom of Home: a thin line above, a small label, then the statement in large bold type (balanced lines, like the About us screen). */
+.ms{margin:44px 0 8px;padding-top:22px;border-top:1px solid var(--line)}.ms .eyebrow{margin:0 0 8px}.ms p{margin:0;max-width:640px;font-size:24px;font-weight:800;letter-spacing:-.02em;line-height:1.25;text-wrap:balance}
+/* On phones the mission on Home is a little smaller and sits closer to the content above. */
+@media(max-width:760px){.ms{margin-top:36px}.ms p{font-size:21px}}
 /* The ZIP code row (the box and the Save button). */
 .zr{display:flex;gap:10px;flex:none}.zr input{width:120px;padding:12px 14px;border:1.5px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);font-size:16px}
 /* On phones the Home sections go into one column and the ZIP row is full width. */
@@ -826,11 +834,14 @@ const ART2='<svg viewBox="0 0 120 100" aria-hidden="true"><rect x="10" y="10" wi
 // slRd: the red full stop after "Find your thing". slCta(): the big main button of the welcome screens (Take the
 // quiz, or Go to my Home). slN(k): how many opportunities are in a list.
 const slRd='<span class="rd">.</span>',slCta=()=>`<div class="cta2"><button class="wbtn big" data-act="${entry().a}">${entry().l}</button></div>`,slN=k=>(DATA[k]||[]).length;
+// MISSION: the mission statement. It is shown in large type on the About us screen and at the bottom of Home. It has no
+// closing full stop here: the page adds one in red, like the one after "Find your thing".
+const MISSION="Helping students find clubs, volunteering and programs that fit them, so nobody misses out on something they would love just because they never heard about it";
 // SL: the three welcome screens. Each one is [small caption, headline, paragraph, small text, colour class, picture,
 // extra HTML]. This is screen 1, "Find your thing."
 const SL=[["WELCOME 01 / 03","Find your thing"+slRd,"Take a two-minute quiz and "+BRAND+" ranks every club, volunteer spot and program at your school by how well it fits you.","One place for everything · Matched to you · Free for students","y",PIN,""],
-// Screen 2, About us: the story, the mission and who it is for.
-["ABOUT US 02 / 03","Built by a student, for students.",BRAND+" started with a student at The Village School in Houston who noticed that great clubs were hard to find. It began as a Google Form quiz, got feedback from classmates, and grew into a website.","","k","",`<div class="blk"><div class="cap">OUR MISSION</div><div>Help students find clubs, volunteering and programs that fit them, so nobody misses out on something they would love just because they never heard about it.</div></div><div class="blk"><div class="cap">WHO IT IS FOR</div><div>Middle school, high school and college students, and the clubs and organizations that want to meet them.</div></div>`],
+// Screen 2, About us: the story, the mission (in large type, with a red full stop) and who it is for.
+["ABOUT US 02 / 03","Built by a student, for students.",BRAND+" started with a student at The Village School in Houston who noticed that great clubs were hard to find. It began as a Google Form quiz, got feedback from classmates, and grew into a website.","","k","",`<div class="mis"><div class="cap">OUR MISSION</div><p>${MISSION}${slRd}</p></div><div class="blk"><div class="cap">WHO IT IS FOR</div><div>Middle school, high school and college students, and the clubs and organizations that want to meet them.</div></div>`],
 // Screen 3, Get started: live counts from the data, three steps, and the plan card (Students FREE; Schools and
 // organizations COMING SOON, with the waitlist link).
 ["GET STARTED 03 / 03","Free for students. Always.",`${slN("school")} school clubs and teams, ${slN("community")} Houston opportunities and ${slN("explore")} online programs are waiting. Take the quiz and ${BRAND} ranks them for you.`,"Takes about 2 minutes.","r","",`<ol class="steps"><li><b aria-hidden="true">1</b>Make a free account.</li><li><b aria-hidden="true">2</b>Take the quiz in your own words.</li><li><b aria-hidden="true">3</b>See a match level from 1 to 10 for every opportunity.</li></ol><div class="plan"><div><div class="pn"><strong>Students</strong><span>Take the quiz, save favorites, message organizers.</span></div><span class="st fr">FREE</span></div><div><div class="pn"><strong>Schools and organizations</strong><span>Post and manage listings, approvals, sign-up reports.</span>${SBON?`<button class="wl2" data-act="waitlist">Join the waitlist →</button>`:""}</div><span class="st">COMING SOON</span></div></div>`]];
@@ -1001,6 +1012,9 @@ function hrow(r){
 function hsec(tab,title,note){
  const rows=pool().filter(r=>r.o.scope===tab&&!S.mine[r.o.id]).slice(0,3);
  return`<section class="hs"><div class="hh"><h3>${title}</h3><button class="lk" data-tab="${tab}">See all →</button></div>${note?`<p class="mut">${note}</p>`:rows.map(hrow).join("")||`<div class="empty">Nothing here yet.</div>`}</section>`}
+// missionBlock(): the "Our mission" section at the bottom of Home: a small label and the mission statement in large
+// type, ending with a red full stop.
+const missionBlock=()=>`<section class="ms"><div class="eyebrow">OUR MISSION</div><p>${MISSION}${slRd}</p></section>`;
 // the Home page. Students (and parents and teachers answering for a student) see matches and activity; organizers see their listings.
 function homeView(){
  // u: the account (nothing for a guest). w: who the quiz is about ("", "your child" or "the student"). first: the
@@ -1021,8 +1035,8 @@ function homeView(){
   // mine: the organizer's posts. pending: how many of them are still waiting for review.
   const mine=custom.filter(o=>o.owner===S.me),pending=mine.filter(o=>/^Pending/.test(o.status)).length;
   // The organizer's Home: the organization name, the count boxes (listings, pending, messages, friends), the Post an
-  // opportunity button, their listings and shortcuts to School, Community and Explore.
-  return head+`<p class="mut">${u.org?esc(u.org)+" · ":""}You post opportunities for students to find.</p>${admin}<div class="hts">${tile(mine.length,"Your listings","post")}${tile(pending,"Pending review","post")}${tile(inbox,"Messages","inbox")}${tile(friends,"Friends","friends")}</div><div class="row hp1"><button class="btn pri" data-act="goseg" data-v="post">Post an opportunity</button></div><h2>Your listings</h2>${mine.length?`<div class="hs">${mine.map(o=>`<div class="hr"><div class="hn"><b>${esc(o.name)}</b><div class="meta">${esc(o.scope)} · ${esc(o.status)}</div></div></div>`).join("")}</div>`:`<div class="empty">You haven’t posted anything yet.</div>`}<h2>What students see</h2><div class="row">${["School","Community","Explore"].map(t=>`<button class="btn" data-tab="${t}">${t}</button>`).join("")}</div><p class="meta" style="margin-top:18px">Listings are saved on this device for now. They show as Pending review until approved.</p>`}
+  // opportunity button, their listings, shortcuts to School, Community and Explore, and the mission at the bottom.
+  return head+`<p class="mut">${u.org?esc(u.org)+" · ":""}You post opportunities for students to find.</p>${admin}<div class="hts">${tile(mine.length,"Your listings","post")}${tile(pending,"Pending review","post")}${tile(inbox,"Messages","inbox")}${tile(friends,"Friends","friends")}</div><div class="row hp1"><button class="btn pri" data-act="goseg" data-v="post">Post an opportunity</button></div><h2>Your listings</h2>${mine.length?`<div class="hs">${mine.map(o=>`<div class="hr"><div class="hn"><b>${esc(o.name)}</b><div class="meta">${esc(o.scope)} · ${esc(o.status)}</div></div></div>`).join("")}</div>`:`<div class="empty">You haven’t posted anything yet.</div>`}<h2>What students see</h2><div class="row">${["School","Community","Explore"].map(t=>`<button class="btn" data-tab="${t}">${t}</button>`).join("")}</div><p class="meta" style="margin-top:18px">Listings are saved on this device for now. They show as Pending review until approved.</p>`+missionBlock()}
  // sch: the note for the School box when the person is not at The Village School.
  const sch=notVillage()?`No club list for your school yet. ${BRAND} has The Village School’s clubs so far.`:"",
   // com: the note for the Community box when the person is outside Houston.
@@ -1036,8 +1050,9 @@ function homeView(){
   // zip: the card that asks for a ZIP code, for accounts that took the quiz before the ZIP question existed.
   zip=!S.done||S.ans.zip?"":`<section class="qb"><div><b>Add your ZIP code</b><span>We use it to show opportunities near ${w||"you"}. It stays private.</span></div><div class="zr"><input type="text" id="z_in" inputmode="numeric" autocomplete="postal-code" maxlength="5" placeholder="77095" aria-label="ZIP code"><button class="btn pri" data-act="setzip">Save</button></div></section><div class="err" role="alert">${esc(S.err)}</div>`;
  // The Home page for students, parents and teachers: the greeting, notices, the count boxes (Saved, I'm doing, and
- // for accounts Messages and Friends), the top matches of each tab, Coming up, and a short Saved list.
- return head+`<p class="mut">${w?`Here’s what we found for ${w}.`:"Here’s a summary of your matches and your activity."}</p>${admin}${loading}${guest}${zip}${quizBanner()}<div class="hts">${tile(cnt(S.saved),"Saved","saved")}${tile(cnt(S.mine),"I’m doing","doing")}${u?tile(inbox,"Messages","inbox")+tile(friends,"Friends","friends"):""}</div><h2>Your top matches</h2>${hsec("School","At your school",sch)}${hsec("Community","Near you",com)}${hsec("Explore","Online and national","")}<div class="hcols"><section><h2>Coming up</h2>${dates.map(r=>`<div class="hr"><div class="hn"><button class="lk hl" data-act="viewopp" data-id="${r.o.id}">${esc(r.o.name)}</button><div class="meta">${esc(cut(r.o.key_dates,90))}</div></div></div>`).join("")||`<div class="empty">No dates yet.</div>`}</section><section><h2>Saved</h2>${saved.length?saved.slice(0,3).map(hrow).join(""):`<div class="empty">Nothing saved yet. Tap the bookmark on anything you like.</div>`}${saved.length>3?`<button class="lk" data-act="goseg" data-v="saved">See all saved →</button>`:""}</section></div>`}
+ // for accounts Messages and Friends), the top matches of each tab, Coming up, a short Saved list, and the mission at
+ // the bottom.
+ return head+`<p class="mut">${w?`Here’s what we found for ${w}.`:"Here’s a summary of your matches and your activity."}</p>${admin}${loading}${guest}${zip}${quizBanner()}<div class="hts">${tile(cnt(S.saved),"Saved","saved")}${tile(cnt(S.mine),"I’m doing","doing")}${u?tile(inbox,"Messages","inbox")+tile(friends,"Friends","friends"):""}</div><h2>Your top matches</h2>${hsec("School","At your school",sch)}${hsec("Community","Near you",com)}${hsec("Explore","Online and national","")}<div class="hcols"><section><h2>Coming up</h2>${dates.map(r=>`<div class="hr"><div class="hn"><button class="lk hl" data-act="viewopp" data-id="${r.o.id}">${esc(r.o.name)}</button><div class="meta">${esc(cut(r.o.key_dates,90))}</div></div></div>`).join("")||`<div class="empty">No dates yet.</div>`}</section><section><h2>Saved</h2>${saved.length?saved.slice(0,3).map(hrow).join(""):`<div class="empty">Nothing saved yet. Tap the bookmark on anything you like.</div>`}${saved.length>3?`<button class="lk" data-act="goseg" data-v="saved">See all saved →</button>`:""}</section></div>`+missionBlock()}
 /* ---------- first-login tour: a small card that points at one part of Home at a time ---------- */
 // which step the tour is on (0 is the first). null means no tour is showing. It is kept in memory only, so reloading the page in the middle starts it again until it is finished or skipped.
 let TOUR=null;
